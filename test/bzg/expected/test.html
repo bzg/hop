@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Test Document</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css">
+  <style>
+body { font-family: sans-serif; line-height: 1.6; margin: 2em auto; max-width: 800px; padding: 0 1em; }
+h1, h2, h3, h4, h5, h6 { line-height: 1.2; }
+header { margin-bottom: 1.5em; }
+header .document-title { margin-bottom: 0.2em; padding-bottom: 0.2em; border-bottom: 3px solid; border-color: #ccc; }
+.subtitle { color: #555; font-size: 1.2em; margin-top: 0; }
+pre { background-color: #f8f8f8; border: 1px solid #ddd; border-radius: 4px; padding: 1em; overflow-x: auto; }
+code { font-family: monospace; }
+img { max-width: 100%; }
+figure { margin: 1em 0; }
+figure img { display: block; }
+figcaption { font-size: 0.9em; color: #555; margin-top: 0.5em; font-style: italic; }
+pre code { background-color: transparent; border: none; padding: 0; }
+blockquote { border-left: 4px solid #eee; margin-left: 0; padding-left: 1em; color: #555; }
+table { border-collapse: collapse; width: 100%; margin-bottom: 1em; }
+th, td { border: 1px solid #ddd; padding: 0.5em; text-align: left; }
+th { background-color: #f2f2f2; font-weight: bold; }
+ul, ol { padding-left: 2em; }
+li > p { margin-top: 0.5em; }
+.todo { font-weight: bold; color: #c00; }
+.done { font-weight: bold; color: #0a0; }
+.priority { color: #c60; }
+.tags { color: #666; font-size: 0.9em; }
+.footnotes { margin-top: 2em; padding-top: 1em; border-top: 1px solid #ccc; font-size: 0.9em; }
+.footnote { margin: 0.5em 0; }
+.footnote-ref, .footnote-inline { text-decoration: none; }
+.footnote-inline { cursor: help; border-bottom: 1px dotted #666; }
+.warning { background: #fff3cd; padding: 0.5em; border-left: 4px solid #ffc107; margin: 1em 0; }
+.note { background: #d1ecf1; padding: 0.5em; border-left: 4px solid #17a2b8; margin: 1em 0; }
+.planning { color: #666; font-size: 0.9em; margin: 0.2em 0 0.5em 0; }
+.planning-keyword { font-weight: bold; }
+  </style>
+</head>
+<body>
+<header>
+<h1 class="document-title">Test Document</h1>
+</header>
+<nav id="table-of-contents">
+<h2>Table of Contents</h2>
+<ul>
+<li><a href="#first-section">1 First Section</a><ul>
+<li><a href="#nested-section">1.1 Nested Section</a><ul>
+<li><a href="#deep-section">1.1.1 Deep Section</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><a href="#second-section">2 Second Section [#A]</a></li>
+<li><a href="#lists">3 Lists</a><ul>
+<li><a href="#unordered-list">3.1 Unordered List</a></li>
+<li><a href="#ordered-list">3.2 Ordered List</a></li>
+<li><a href="#description-list">3.3 Description List</a></li>
+</ul>
+</li>
+<li><a href="#tables">4 Tables</a></li>
+<li><a href="#blocks">5 Blocks</a><ul>
+<li><a href="#source-block">5.1 Source Block</a></li>
+<li><a href="#quote-block">5.2 Quote Block</a></li>
+<li><a href="#example-block">5.3 Example Block</a></li>
+</ul>
+</li>
+<li><a href="#inline-elements">6 Inline Elements</a></li>
+<li><a href="#fixed-width-and-comments">7 Fixed Width and Comments</a></li>
+<li><a href="#footnotes">8 Footnotes</a></li>
+</ul>
+</nav>
+<p>Some top-level paragraph with <strong>bold</strong>, <em>italic</em>, <u>underline</u>, <del>strikethrough</del>, <code>code</code>, and <code>verbatim</code> markup.</p>
+<p>A second paragraph with a <a href="https://example.com">link with description</a> and a bare link <a href="https://example.com">https://example.com</a>.</p>
+<section id="first-section">
+<h1><span class="section-number">1</span> First Section</h1>
+<p>Paragraph in first section.</p>
+<section id="nested-section">
+<h2><span class="section-number">1.1</span> Nested Section</h2>
+<p>Paragraph in nested section with footnote reference<sup id="fnref-1"><a href="#fn-1" class="footnote-ref">1</a></sup>.</p>
+<section id="deep-section">
+<h3><span class="section-number">1.1.1</span> Deep Section</h3>
+<p>Deep content here.</p>
+</section>
+</section>
+</section>
+<section id="second-section">
+<h1><span class="section-number">2</span> <span class="todo todo">TODO</span> Second Section [#A] <span class="tags">:tag1:tag2:</span></h1>
+<div class="planning"><span class="planning-keyword">SCHEDULED:</span> <time datetime="2025-03-15T10:00">2025-03-15T10:00</time></div>
+<p>This section has a TODO keyword, priority, tags, scheduling and properties.</p>
+</section>
+<section id="lists">
+<h1><span class="section-number">3</span> Lists</h1>
+<section id="unordered-list">
+<h2><span class="section-number">3.1</span> Unordered List</h2>
+<ul>
+<li>First item</li>
+<li>Second item with <strong>bold</strong></li>
+<li>Third item
+<ul>
+<li>Nested item one</li>
+<li>Nested item two</li>
+</ul></li>
+</ul>
+</section>
+<section id="ordered-list">
+<h2><span class="section-number">3.2</span> Ordered List</h2>
+<ol>
+<li>First</li>
+<li>Second</li>
+<li>Third</li>
+</ol>
+</section>
+<section id="description-list">
+<h2><span class="section-number">3.3</span> Description List</h2>
+<dl>
+<dt>Emacs</dt>
+<dd>A self-documenting text editor</dd>
+<dt>Vim</dt>
+<dd>A modal text editor</dd>
+<dt>Nano</dt>
+<dd>A simple terminal editor</dd>
+</dl>
+</section>
+</section>
+<section id="tables">
+<h1><span class="section-number">4</span> Tables</h1>
+<table>
+  <thead>
+    <tr>
+      <th>Name</th><th>Language</th><th>Year</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Emacs</td><td>Lisp</td><td>1976</td>
+    </tr>
+    <tr>
+      <td>Vim</td><td>C</td><td>1991</td>
+    </tr>
+    <tr>
+      <td>Nano</td><td>C</td><td>1999</td>
+    </tr>
+  </tbody>
+</table>
+</section>
+<section id="blocks">
+<h1><span class="section-number">5</span> Blocks</h1>
+<section id="source-block">
+<h2><span class="section-number">5.1</span> Source Block</h2>
+<pre><code class="language-clojure">(defn hello [name]
+  (println &quot;Hello,&quot; name))</code></pre>
+</section>
+<section id="quote-block">
+<h2><span class="section-number">5.2</span> Quote Block</h2>
+<blockquote>
+<p>The best way to predict the future is to invent it.
+-- Alan Kay</p>
+</blockquote>
+</section>
+<section id="example-block">
+<h2><span class="section-number">5.3</span> Example Block</h2>
+<pre>This is example text.
+  Indentation is preserved.</pre>
+</section>
+</section>
+<section id="inline-elements">
+<h1><span class="section-number">6</span> Inline Elements</h1>
+<p>An image link: <img src="https://example.com/image.png" alt="https://example.com/image.png">.</p>
+<p>An image with description: <img src="https://example.com/photo.jpg" alt="A photo">.</p>
+<p>A mailto link: <a href="mailto:test@example.com">Email me</a>.</p>
+<p>An internal link to <a href="#second-section">second-section</a>.</p>
+</section>
+<section id="fixed-width-and-comments">
+<h1><span class="section-number">7</span> Fixed Width and Comments</h1>
+<pre>This is fixed width text.
+Second fixed width line.</pre>
+<!-- This is a comment.
+Second comment line. -->
+</section>
+<section id="footnotes">
+<h1><span class="section-number">8</span> Footnotes</h1>
+<p>Paragraph referencing another footnote<sup id="fnref-2"><a href="#fn-2" class="footnote-ref">2</a></sup>.</p>
+<div class="footnote" id="fn-1"><a href="#fnref-1" class="footnote-backref"><sup>1</sup></a> First footnote definition.</div>
+<div class="footnote" id="fn-2"><a href="#fnref-2" class="footnote-backref"><sup>2</sup></a> Second footnote definition.</div>
+</section>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+</body>
+</html>

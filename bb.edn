@@ -1,0 +1,12 @@
+{:paths ["src" "test"]
+ :deps {org.clojars.bzg/organ {:mvn/version "0.1.0"}}
+ :bbin/bin {hop {:main-opts ["-m" "bzg.hop"]}}
+
+ :tasks
+ {test:generate {:doc  "Generate expected test outputs"
+                 :task (do (require 'bzg.hop-test)
+                           ((resolve 'bzg.hop-test/generate)))}
+
+  test          {:doc  "Run tests against expected outputs"
+                 :task (do (require 'bzg.hop-test)
+                           ((resolve 'bzg.hop-test/test-all)))}}}
