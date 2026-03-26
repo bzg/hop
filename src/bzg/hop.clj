@@ -204,12 +204,13 @@
 (defn- heading-to-slug
   "Convert a heading title to a URL-safe slug for anchor links."
   [title]
-  (-> title
-      str/lower-case
-      (str/replace #"[^\p{L}\p{N}\s-]" "")
-      ; Keep Unicode letters & digits
-      str/trim
-      (str/replace #"\s+" "-")))   ; Replace spaces with hyphens
+  (let [slug (-> title
+                 str/lower-case
+                 (str/replace #"[^\p{L}\p{N}\s-]" "")
+                 ; Keep Unicode letters & digits
+                 str/trim
+                 (str/replace #"\s+" "-"))]
+    (if (str/blank? slug) "section" slug)))   ; Replace spaces with hyphens
 
 (defn- prepend-base-url
   "Prepend *base-url* to href when it is a relative path."
@@ -253,7 +254,7 @@
          is-local-file (= link-type :file)
          is-remote   (#{:http :https} link-type)
          url-is-image  (image-url? actual-url)
-         desc-is-image (and desc (or (image-url? desc) (remote-url? desc)))]
+         desc-is-image (and desc (image-url? desc))]
      (cond
        ;; Local file images: convert to base64 data URI
        (and is-local-file url-is-image)
@@ -292,7 +293,7 @@
               (escape-html desc) "\" alt=\"" (escape-html desc) "\"></a>")
 
          :else
-         (let [href    (resolve-href link-type target (escape-html url))
+         (let [href    (escape-html (resolve-href link-type target url))
                display (escape-html (resolve-display link-type target url desc))]
            (str "<a href=\"" href "\">" display "</a>")))
 
@@ -821,7 +822,7 @@ li > p { margin-top: 0.5em; }
             priority-str (when (:priority node) (str "[#" (:priority node) "] "))
             sec-num-str (when-let [sn (:section-number node)] (str sn " "))
             tags-str (when (seq (:tags node)) (str " `:" (str/join ":" (:tags node)) ":`"))
-            heading (str (repeat-str (:level node) "#") " "
+            heading (str (repeat-str (min (:level node) max-heading-level) "#") " "
                          todo-str priority-str sec-num-str
                          (format-text :md (:title node))
                          tags-str)]
