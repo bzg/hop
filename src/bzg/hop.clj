@@ -132,8 +132,7 @@
   "Extract lowercase file extension from a path or URL."
   [path]
   (when path
-    (let [clean-path (first (str/split (str/lower-case path) #"[?#]"))]
-      (last (str/split clean-path #"\.")))))
+    (-> path str/lower-case (str/split #"[?#]") first (str/split #"\.") last)))
 
 (defn- image-url?
   "Check if a URL points to an image based on file extension."
@@ -160,9 +159,8 @@
   (try
     (let [file (java.io.File. (expand-home filepath))]
       (when (.exists file)
-        (let [bytes (java.nio.file.Files/readAllBytes (.toPath file))
-              encoder (java.util.Base64/getEncoder)]
-          (.encodeToString encoder bytes))))
+        (-> file .toPath java.nio.file.Files/readAllBytes
+            (->> (.encodeToString (java.util.Base64/getEncoder))))))
     (catch Exception _ nil)))
 
 (defn- image-to-data-uri
@@ -546,9 +544,10 @@ li > p { margin-top: 0.5em; }
   "Render properties as org :PROPERTIES: drawer."
   [properties]
   (when (seq properties)
-    (str ":PROPERTIES:\n"
-         (str/join "\n" (map (fn [[k v]] (str ":" (upper-name k) ": " v)) properties))
-         "\n:END:")))
+    (->> properties
+         (map (fn [[k v]] (str ":" (upper-name k) ": " v)))
+         (str/join "\n")
+         (format ":PROPERTIES:\n%s\n:END:"))))
 
 (defn- render-list-item [item index ordered level fmt]
   (let [indent (repeat-str (* level list-indent-width) " ")
@@ -661,15 +660,15 @@ li > p { margin-top: 0.5em; }
                   _ (.append sb "</nav>")]
               (.toString sb))
       ;; org and markdown
-      (str/join "\n"
-                (map (fn [{:keys [level title section-number]}]
-                       (let [indent (repeat-str (* 2 (dec level)) " ")
-                             num-str (when section-number (str section-number " "))
-                             label (if (= fmt :org)
-                                     (str num-str title)
-                                     (str "[" num-str (format-text :md title) "](#" (heading-to-slug title) ")"))]
-                         (str indent "- " label)))
-                     entries)))))
+      (->> entries
+           (map (fn [{:keys [level title section-number]}]
+                  (let [indent (repeat-str (* 2 (dec level)) " ")
+                        num-str (when section-number (str section-number " "))
+                        label (if (= fmt :org)
+                                (str num-str title)
+                                (str "[" num-str (format-text :md title) "](#" (heading-to-slug title) ")"))]
+                    (str indent "- " label))))
+           (str/join "\n")))))
 
 (defn- render-document [node fmt level]
   (let [options (parse-options-string (get-in node [:meta :options]))
@@ -858,12 +857,14 @@ li > p { margin-top: 0.5em; }
     :html (let [tag (cond (:description node) "dl"
                           (:ordered node) "ol"
                           :else "ul")
-                items-html (str/join "\n" (map #(render-node % fmt) (:items node)))]
+                items-html (->> (:items node)
+                                (map #(render-node % fmt))
+                                (str/join "\n"))]
             (str "<" tag ">\n" items-html "\n</" tag ">"))
     (let [sep (if (and (= fmt :md) (:description node)) "\n\n" "\n")]
-      (str/join sep (map-indexed
-                     (fn [idx item] (render-list-item item idx (:ordered node) level fmt))
-                     (:items node))))))
+      (->> (:items node)
+           (map-indexed (fn [idx item] (render-list-item item idx (:ordered node) level fmt)))
+           (str/join sep)))))
 
 (defn- render-list-item-node [node fmt level]
   (if (= fmt :html)
@@ -919,7 +920,9 @@ li > p { margin-top: 0.5em; }
                     (str/join "\n"))
                "\n</blockquote>")
     :org (str "#+BEGIN_QUOTE\n" (escape-block-content (:content node)) "\n#+END_QUOTE")
-    (str/join "\n" (map #(str "> " (format-text :md %)) (str/split-lines (:content node))))))
+    (->> (str/split-lines (:content node))
+         (map #(str "> " (format-text :md %)))
+         (str/join "\n"))))
 
 (defn- render-comment-node [node fmt]
   (case fmt
@@ -966,8 +969,14 @@ li > p { margin-top: 0.5em; }
                     "\n" escaped-content "\n#+END_" (upper-name block-type))))
       ;; markdown
       (case block-type
-        :warning (str "> **Warning**\n" (str/join "\n" (map #(str "> " %) (str/split-lines (:content node)))))
-        :note (str "> **Note**\n" (str/join "\n" (map #(str "> " %) (str/split-lines (:content node)))))
+        :warning (str "> **Warning**\n"
+                      (->> (str/split-lines (:content node))
+                           (map #(str "> " %))
+                           (str/join "\n")))
+        :note (str "> **Note**\n"
+                   (->> (str/split-lines (:content node))
+                        (map #(str "> " %))
+                        (str/join "\n")))
         :export (if (= export-type "markdown") (:content node) "")
         :example (str "```\n" (:content node) "\n```")
         (str "```" (name block-type) "\n" (:content node) "\n```")))))
@@ -1137,10 +1146,10 @@ li > p { margin-top: 0.5em; }
   "Given an ICS VALUE=DATE string like '20250115', return the next day '20250116'.
    RFC 5545 requires DTEND to be exclusive for VALUE=DATE events."
   [date-str]
-  (let [ld (java.time.LocalDate/parse date-str
-                                      (java.time.format.DateTimeFormatter/ofPattern "yyyyMMdd"))]
-    (.format (.plusDays ld 1)
-             (java.time.format.DateTimeFormatter/ofPattern "yyyyMMdd"))))
+  (-> (java.time.LocalDate/parse date-str
+        (java.time.format.DateTimeFormatter/ofPattern "yyyyMMdd"))
+      (.plusDays 1)
+      (.format (java.time.format.DateTimeFormatter/ofPattern "yyyyMMdd"))))
 
 (defn- render-ast-as-ics
   "Export scheduled items as VEVENT and deadline+TODO items as VTODO."
