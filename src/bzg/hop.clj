@@ -199,7 +199,8 @@
         ;; Wrap in figure with figcaption if caption is present
         caption (:caption affiliated)]
     (if caption
-      (str "<figure>" img-tag "<figcaption>" (escape-html caption) "</figcaption></figure>")
+      (str "<figure>" img-tag "<figcaption>"
+           (escape-html caption) "</figcaption></figure>")
       img-tag)))
 
 (defn- heading-to-slug
@@ -207,7 +208,8 @@
   [title]
   (-> title
       str/lower-case
-      (str/replace #"[^\p{L}\p{N}\s-]" "")  ; Keep Unicode letters & digits
+      (str/replace #"[^\p{L}\p{N}\s-]" "")
+      ; Keep Unicode letters & digits
       str/trim
       (str/replace #"\s+" "-")))   ; Replace spaces with hyphens
 
@@ -263,8 +265,10 @@
            (if affiliated
              (render-image-html data-uri (or desc target) affiliated)
              (if desc-is-image
-               (str "<a href=\"" data-uri "\"><img src=\"" (escape-html desc) "\" alt=\"" (escape-html desc) "\"></a>")
-               (str "<img src=\"" data-uri "\" alt=\"" (escape-html (or desc target)) "\">")))
+               (str "<a href=\"" data-uri "\"><img src=\""
+                    (escape-html desc) "\" alt=\"" (escape-html desc) "\"></a>")
+               (str "<img src=\"" data-uri "\" alt=\""
+                    (escape-html (or desc target)) "\">")))
            (= fmt :md)
            (str "![" (or desc target) "](" data-uri ")")
            :else "")
@@ -276,15 +280,18 @@
          (and is-remote url-is-image (nil? desc))
          (if affiliated
            (render-image-html url url affiliated)
-           (str "<img src=\"" (escape-html url) "\" alt=\"" (escape-html url) "\">"))
+           (str "<img src=\"" (escape-html url) "\" alt=\""
+                (escape-html url) "\">"))
 
          (and is-remote url-is-image desc (not desc-is-image))
          (if affiliated
            (render-image-html url desc affiliated)
-           (str "<img src=\"" (escape-html url) "\" alt=\"" (escape-html desc) "\">"))
+           (str "<img src=\"" (escape-html url) "\" alt=\""
+                (escape-html desc) "\">"))
 
          (and is-remote desc-is-image)
-         (str "<a href=\"" (escape-html url) "\"><img src=\"" (escape-html desc) "\" alt=\"" (escape-html desc) "\"></a>")
+         (str "<a href=\"" (escape-html url) "\"><img src=\""
+              (escape-html desc) "\" alt=\"" (escape-html desc) "\"></a>")
 
          :else
          (let [href    (resolve-href link-type target (escape-html url))
@@ -320,21 +327,24 @@
 (defn- format-text-markdown [text]
   (if (non-blank? text)
     (let [;; First, protect existing markdown links and code
-          [protected restore] (protect-patterns text [[#"\[[^\]]+\]\([^)]+\)" "MD-LINK-"]
-                                                      [#"`[^`]+`" "MD-CODE-"]])
+          [protected restore] (protect-patterns
+                               text [[#"\[[^\]]+\]\([^)]+\)" "MD-LINK-"]
+                                     [#"`[^`]+`" "MD-CODE-"]])
           ;; Convert org links to markdown, then protect them before applying emphasis
           with-links (-> protected
                          (str/replace link-with-desc-pattern #(format-link :md %))
                          (str/replace link-without-desc-pattern #(format-link :md [% (second %) nil])))
           ;; Protect the newly created markdown links from emphasis processing
-          [link-protected link-restore] (protect-patterns with-links [[#"\[[^\]]+\]\([^)]+\)" "ORG-LINK-"]])
+          [link-protected link-restore] (protect-patterns
+                                         with-links [[#"\[[^\]]+\]\([^)]+\)" "ORG-LINK-"]])
           ;; Now apply emphasis patterns safely
           ;; Process code/verbatim first
           with-code (-> link-protected
                         (str/replace (:code format-patterns) "`$1`")
                         (str/replace (:verbatim format-patterns) "`$1`"))
           ;; Protect backtick code from further emphasis processing
-          [code-protected code-restore] (protect-patterns with-code [[#"`[^`]+`" "ORG-CODE-"]])
+          [code-protected code-restore] (protect-patterns
+                                         with-code [[#"`[^`]+`" "ORG-CODE-"]])
           formatted (-> code-protected
                         (apply-format-patterns [[:bold "**$1**"]
                                                 [:italic "*$1*"]
@@ -354,19 +364,22 @@
       ;; Inline footnote [fn:label:content] or [fn::content]
       (let [display (if (str/blank? label) "*" label)
             escaped-content (escape-html content)]
-        (str "<sup><a href=\"#\" title=\"" escaped-content "\" class=\"footnote-inline\">" display "</a></sup>"))
+        (str "<sup><a href=\"#\" title=\"" escaped-content
+             "\" class=\"footnote-inline\">" display "</a></sup>"))
       ;; Regular footnote reference [fn:label]
       (if-let [[_ label] (re-matches footnote-ref-pattern full)]
-        (str "<sup id=\"fnref-" label "\"><a href=\"#fn-" label "\" class=\"footnote-ref\">" label "</a></sup>")
+        (str "<sup id=\"fnref-" label "\"><a href=\"#fn-"
+             label "\" class=\"footnote-ref\">" label "</a></sup>")
         full))))
 
 (defn- format-text-html [text]
   (if (non-blank? text)
     (let [;; First protect macros and org links before escaping HTML
           ;; Macro pattern must come first: {{{name(args)}}} where args can contain anything
-          [protected-content restore-content] (protect-patterns text [[#"\{\{\{.+?\}\}\}" "ORG-MACRO-"]
-                                                                      [link-with-desc-pattern "ORG-LINK-DESC-"]
-                                                                      [link-without-desc-pattern "ORG-LINK-PLAIN-"]])
+          [protected-content restore-content] (protect-patterns
+                                               text [[#"\{\{\{.+?\}\}\}" "ORG-MACRO-"]
+                                                     [link-with-desc-pattern "ORG-LINK-DESC-"]
+                                                     [link-without-desc-pattern "ORG-LINK-PLAIN-"]])
           ;; Escape HTML in the text (but not in protected content)
           escaped (escape-html protected-content)
           ;; Restore org links and macros, convert links to HTML
@@ -374,8 +387,9 @@
                          (str/replace link-with-desc-pattern #(format-link :html %))
                          (str/replace link-without-desc-pattern #(format-link :html [% (second %) nil])))
           ;; Protect the HTML links and macros from emphasis processing
-          [protected restore] (protect-patterns with-links [[#"<a\s[^>]*>[^<]*</a>" "HTML-LINK-"]
-                                                            [#"\{\{\{.+?\}\}\}" "HTML-MACRO-"]])
+          [protected restore] (protect-patterns
+                               with-links [[#"<a\s[^>]*>[^<]*</a>" "HTML-LINK-"]
+                                           [#"\{\{\{.+?\}\}\}" "HTML-MACRO-"]])
           ;; Now apply emphasis patterns safely, then handle footnotes
           ;; Process code/verbatim first so their content is protected
           with-code (-> protected
@@ -424,7 +438,6 @@
     :md (format-text-markdown text)
     text))
 
-
 ;; AST Content Rendering
 (defn- render-content-in-node [node render-format]
   (let [fmt #(format-text render-format %)
@@ -442,7 +455,7 @@
                  :quote-block (update node :content #(->> (str/split-lines %) (map fmt) (str/join "\n")))
                  :footnote-def (update node :content fmt)
                  :block (if (#{:src :example :export} (:block-type node)) node
-                            (update node :content #(->> (str/split-lines %) (map fmt) (str/join "\n"))))
+                          (update node :content #(->> (str/split-lines %) (map fmt) (str/join "\n"))))
                  node)]
     (remove-empty-vals result)))
 
@@ -500,33 +513,32 @@ li > p { margin-top: 0.5em; }
 
 (defn- render-table [rows has-header fmt]
   (if (empty? rows) ""
-      (let [format-cell #(format-text fmt %)
-            formatted-rows (mapv (fn [row] (mapv format-cell row)) rows)
-            ;; Find max number of columns across all rows
-            max-cols (reduce max 0 (map count formatted-rows))
-            ;; Pad rows to have same number of columns
-            padded-rows (mapv (fn [row]
-                                (let [missing (- max-cols (count row))]
-                                  (if (pos? missing)
-                                    (into row (repeat missing ""))
-                                    row)))
-                              formatted-rows)
-            ;; Now calculate col-widths safely
-            col-widths (when (and (seq padded-rows) (pos? max-cols))
-                         (apply mapv (fn [& cells]
-                                       (apply max min-table-cell-width (map count cells)))
-                                padded-rows))
-            pad-cell (fn [cell width] (str cell (repeat-str (- width (count cell)) " ")))
-            format-row (fn [row]
-                         (str "| " (str/join " | " (map-indexed #(pad-cell %2 (nth col-widths %1 min-table-cell-width)) row)) " |"))
-            separator (when (seq col-widths)
-                        (str "|-" (str/join (if (= fmt :org) "-+-" "-|-") (map #(repeat-str % "-") col-widths)) "-|"))]
-        (if (nil? col-widths)
-          ""
-          (if has-header
-            (str (format-row (first padded-rows)) "\n" separator "\n"
-                 (str/join "\n" (map format-row (rest padded-rows))))
-            (str/join "\n" (map format-row padded-rows)))))))
+    (let [format-cell #(format-text fmt %)
+          ;; Find max number of columns across all rows
+          max-cols (reduce max 0 (map count rows))
+          ;; Pad helper for ragged rows
+          pad-row (fn [row] (let [missing (- max-cols (count row))]
+                              (if (pos? missing)
+                                (into (vec row) (repeat missing ""))
+                                (vec row))))
+          ;; Pad raw rows and compute col-widths from raw text
+          padded-raw (mapv pad-row rows)
+          padded-rows (mapv (fn [row] (mapv format-cell row)) padded-raw)
+          col-widths (when (and (seq padded-raw) (pos? max-cols))
+                       (apply mapv (fn [& cells]
+                                     (apply max min-table-cell-width (map count cells)))
+                              padded-raw))
+          pad-cell (fn [cell width] (str cell (repeat-str (- width (count cell)) " ")))
+          format-row (fn [row]
+                       (str "| " (str/join " | " (map-indexed #(pad-cell %2 (nth col-widths %1 min-table-cell-width)) row)) " |"))
+          separator (when (seq col-widths)
+                      (str "|-" (str/join (if (= fmt :org) "-+-" "-|-") (map #(repeat-str % "-") col-widths)) "-|"))]
+      (if (nil? col-widths)
+        ""
+        (if has-header
+          (str (format-row (first padded-rows)) "\n" separator "\n"
+               (str/join "\n" (map format-row (rest padded-rows))))
+          (str/join "\n" (map format-row padded-rows)))))))
 
 (declare ^:private render-node)
 
@@ -869,19 +881,19 @@ li > p { margin-top: 0.5em; }
           has-header (:has-header node)
           cell (fn [tag content] (str "<" tag ">" (format-text-html content) "</" tag ">"))]
       (if (empty? rows) ""
-          (str "<table>\n"
-               (when has-header
-                 (str "  <thead>\n    <tr>\n      "
-                      (str/join "" (map #(cell "th" %) (first rows)))
-                      "\n    </tr>\n  </thead>\n"))
-               "  <tbody>\n"
-               (str/join "\n"
-                         (map (fn [row]
-                                (str "    <tr>\n      "
-                                     (str/join "" (map #(cell "td" %) row))
-                                     "\n    </tr>"))
-                              (if has-header (rest rows) rows)))
-               "\n  </tbody>\n</table>")))
+        (str "<table>\n"
+             (when has-header
+               (str "  <thead>\n    <tr>\n      "
+                    (str/join "" (map #(cell "th" %) (first rows)))
+                    "\n    </tr>\n  </thead>\n"))
+             "  <tbody>\n"
+             (str/join "\n"
+                       (map (fn [row]
+                              (str "    <tr>\n      "
+                                   (str/join "" (map #(cell "td" %) row))
+                                   "\n    </tr>"))
+                            (if has-header (rest rows) rows)))
+             "\n  </tbody>\n</table>")))
     (render-table (:rows node) (:has-header node) fmt)))
 
 (defn- render-src-block [node fmt]
@@ -1126,7 +1138,7 @@ li > p { margin-top: 0.5em; }
    RFC 5545 requires DTEND to be exclusive for VALUE=DATE events."
   [date-str]
   (let [ld (java.time.LocalDate/parse date-str
-             (java.time.format.DateTimeFormatter/ofPattern "yyyyMMdd"))]
+                                      (java.time.format.DateTimeFormatter/ofPattern "yyyyMMdd"))]
     (.format (.plusDays ld 1)
              (java.time.format.DateTimeFormatter/ofPattern "yyyyMMdd"))))
 
@@ -1181,13 +1193,14 @@ li > p { margin-top: 0.5em; }
                            (str "STATUS:" (if (= todo :DONE) "COMPLETED" "NEEDS-ACTION"))
                            "END:VTODO"])))))
          items)]
-    (str/join "\r\n"
-              (concat
-               ["BEGIN:VCALENDAR"
-                "VERSION:2.0"
-                "PRODID:-//hop//EN"]
-               components
-               ["END:VCALENDAR"]))))
+    (str (str/join "\r\n"
+                   (concat
+                    ["BEGIN:VCALENDAR"
+                     "VERSION:2.0"
+                     "PRODID:-//hop//EN"]
+                    components
+                    ["END:VCALENDAR"]))
+         "\r\n")))
 
 (defn render-ast-as-markdown [ast] (render-node (number-sections ast) :md))
 (defn render-ast-as-html [ast] (render-node (number-sections ast) :html))
@@ -1209,8 +1222,11 @@ li > p { margin-top: 0.5em; }
    Matches [[path/to/image.png]] or [[path/to/image.png][description]]"
   [s]
   (if (non-blank? s)
-    (let [links (concat (re-seq link-with-desc-pattern s)
-                        (re-seq link-without-desc-pattern s))]
+    (let [with-desc (re-seq link-with-desc-pattern s)
+          matched-strs (set (map first with-desc))
+          without-desc (remove #(matched-strs (first %))
+                               (re-seq link-without-desc-pattern s))
+          links (concat with-desc without-desc)]
       (count (filter (fn [[_ target]] (image-url? target)) links)))
     0))
 
@@ -1409,8 +1425,8 @@ li > p { margin-top: 0.5em; }
         (try
           (binding [*base-url* (when-let [u (:base-url options)]
                                  (cond-> u (not (str/ends-with? u "/")) (str "/")))
-                   *css-theme* (when-let [v (:css-theme options)]
-                                 (resolve-css-theme v))]
+                    *css-theme* (when-let [v (:css-theme options)]
+                                  (resolve-css-theme v))]
             (let [unwrap? (not (:no-unwrap options))
                   ast (organ/parse-org org-content {:unwrap? unwrap?})
                   filter-opts {:level-limit (:level-limit options)
