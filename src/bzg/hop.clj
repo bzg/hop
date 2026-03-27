@@ -16,13 +16,8 @@
 (def ^:private remove-empty-vals organ/remove-empty-vals)
 (def ^:private non-blank? organ/non-blank?)
 (def ^:private escape-block-content organ/escape-block-content)
-
-;; Re-bind organ patterns for inline formatting
-(def ^:private footnote-ref-pattern organ/footnote-ref-pattern)
-(def ^:private footnote-inline-pattern organ/footnote-inline-pattern)
-(def ^:private link-with-desc-pattern organ/link-with-desc-pattern)
-(def ^:private link-without-desc-pattern organ/link-without-desc-pattern)
-(def ^:private link-type-pattern organ/link-type-pattern)
+(def ^:private parse-inline organ/parse-inline)
+(def ^:private inline-text organ/inline-text)
 
 ;; Rendering constants
 (def ^:private min-table-cell-width 3)
@@ -34,64 +29,9 @@
 (def ^:dynamic *css-theme* nil)
 (def ^:private pico-themes-cdn "https://cdn.jsdelivr.net/gh/bzg/pico-themes@main/")
 
-;; Format Protection Framework
-(defn- protect-patterns [text patterns]
-  (let [[protected _ matches]
-        (reduce
-         (fn [[t counter matches] [pattern prefix]]
-           (reduce
-            (fn [[s c m] match]
-              (let [full (if (string? match) match (first match))
-                    c'   (inc c)
-                    ph   (str prefix c')]
-                [(str/replace-first s
-                                    (re-pattern (java.util.regex.Pattern/quote full))
-                                    (java.util.regex.Matcher/quoteReplacement ph))
-                 c'
-                 (assoc m ph full)]))
-            [t counter matches]
-            (re-seq pattern t)))
-         [text 0 {}]
-         patterns)]
-    [protected
-     (fn [t]
-       (reduce (fn [s [ph orig]] (str/replace s ph orig))
-               t
-               matches))]))
-
-;; Link Parsing (for rendering)
-(defn- parse-link [s]
-  (cond
-    ;; Internal link to heading: [[*Some Heading]]
-    (str/starts-with? s "*")
-    {:type :heading :target (subs s 1)}
-
-    ;; Internal link to custom-id: [[#my-id]]
-    (str/starts-with? s "#")
-    {:type :custom-id :target (subs s 1)}
-
-    ;; Typed link: file:, http:, etc.
-    :else
-    (if-let [[_ t target] (re-matches link-type-pattern s)]
-      {:type (keyword t) :target target}
-      {:type :external :target s})))
-
-;; Text Formatting
-;; Emphasis patterns: conservative matching to avoid false positives.
-;; For bold/italic/underline/strike:
-;; - Pre-char must be start-of-string or non-word char
-;; - First and last char inside must be word chars
-;; - Content must not contain the marker char (no nesting)
-;; For code/verbatim (=, ~):
-;; - Same boundary rules, but inner content allows any non-whitespace
-;;   since these are literal/verbatim spans
-(def ^:private format-patterns
-  {:bold      #"(?<=^|[\s\p{Punct}])\*(\w[^\*]*?\w|\w)\*(?=$|[\s\p{Punct}])"
-   :italic    #"(?<=^|[\s\p{Punct}])/(\w[^/]*?\w|\w)/(?=$|[\s\p{Punct}])"
-   :underline #"(?<=^|[\s\p{Punct}])_(\w[^_]*?\w|\w)_(?=$|[\s\p{Punct}])"
-   :strike    #"(?<=^|[\s\p{Punct}])\+(\w[^\+]*?\w|\w)\+(?=$|[\s\p{Punct}])"
-   :code      #"(?<=^|[\s\p{Punct}])~([^~\s](?:[^~]*[^~\s])?)~(?=$|[\s\p{Punct}])"
-   :verbatim  #"(?<=^|[\s\p{Punct}])=([^=\s](?:[^=]*[^=\s])?)=(?=$|[\s\p{Punct}])"})
+;; Inline Node Rendering
+;; Organ 0.2.0 provides parsed inline nodes. These functions render them
+;; to HTML, Markdown, or Org format strings.
 
 (defn- escape-html [text]
   (-> (str text)
@@ -202,15 +142,16 @@
       img-tag)))
 
 (defn- heading-to-slug
-  "Convert a heading title to a URL-safe slug for anchor links."
+  "Convert a heading title to a URL-safe slug for anchor links.
+   Accepts both a string or a vector of inline nodes."
   [title]
-  (let [slug (-> title
+  (let [text (if (string? title) title (or (inline-text title) ""))
+        slug (-> text
                  str/lower-case
                  (str/replace #"[^\p{L}\p{N}\s-]" "")
-                 ; Keep Unicode letters & digits
                  str/trim
                  (str/replace #"\s+" "-"))]
-    (if (str/blank? slug) "section" slug)))   ; Replace spaces with hyphens
+    (if (str/blank? slug) "section" slug)))
 
 (defn- prepend-base-url
   "Prepend *base-url* to href when it is a relative path."
@@ -222,9 +163,9 @@
     (str *base-url* href)
     href))
 
-(defn- resolve-href
-  "Resolve a link target to a URL string given its type."
-  [link-type target url]
+(defn- resolve-link-href
+  "Resolve a link node to a URL string given its fields."
+  [{:keys [link-type target url]}]
   (prepend-base-url
    (case link-type
      :file          (str/replace target #"\.org$" ".html")
@@ -234,227 +175,188 @@
      :mailto        (str "mailto:" target)
      url)))
 
-(defn- resolve-display
-  "Resolve the display text for a link, given an optional explicit description."
-  [link-type target url desc]
-  (or desc (case link-type
-             :heading   target
-             :custom-id target
-             url)))
+;; Inline Node Rendering — forward declarations
+(declare render-inline render-link-node)
 
-(defn- format-link
-  "Format an org link to the specified format.
-   Optionally accepts affiliated keywords for enhanced image rendering."
-  ([fmt match] (format-link fmt match nil))
-  ([fmt [_ url desc] affiliated]
-   (let [parsed      (parse-link url)
-         link-type   (:type parsed)
-         target      (:target parsed)
-         actual-url  (if (#{:http :https} link-type) url target)
-         is-local-file (= link-type :file)
-         is-remote   (#{:http :https} link-type)
-         url-is-image  (image-url? actual-url)
-         desc-is-image (and desc (image-url? desc))]
-     (cond
-       ;; Local file images: convert to base64 data URI
-       (and is-local-file url-is-image)
-       (if-let [data-uri (image-to-data-uri target)]
-         (cond
-           (= fmt :html)
-           (if affiliated
-             (render-image-html data-uri (or desc target) affiliated)
-             (if desc-is-image
-               (str "<a href=\"" data-uri "\"><img src=\""
-                    (escape-html desc) "\" alt=\"" (escape-html desc) "\"></a>")
-               (str "<img src=\"" data-uri "\" alt=\""
-                    (escape-html (or desc target)) "\">")))
-           (= fmt :md)
-           (str "![" (or desc target) "](" data-uri ")")
-           :else "")
-         "")
+(defn- render-inline-node
+  "Render a single inline node to a string in the given format."
+  [node fmt]
+  (case (:type node)
+    :text      (case fmt :html (escape-html (:value node)) (:value node))
+    :bold      (case fmt
+                 :html (str "<strong>" (render-inline (:children node) fmt) "</strong>")
+                 :md   (str "**" (render-inline (:children node) fmt) "**")
+                 (str "*" (render-inline (:children node) fmt) "*"))
+    :italic    (case fmt
+                 :html (str "<em>" (render-inline (:children node) fmt) "</em>")
+                 :md   (str "*" (render-inline (:children node) fmt) "*")
+                 (str "/" (render-inline (:children node) fmt) "/"))
+    :underline (case fmt
+                 :html (str "<u>" (render-inline (:children node) fmt) "</u>")
+                 :md   (str "_" (render-inline (:children node) fmt) "_")
+                 (str "_" (render-inline (:children node) fmt) "_"))
+    :strike    (case fmt
+                 :html (str "<del>" (render-inline (:children node) fmt) "</del>")
+                 :md   (str "~~" (render-inline (:children node) fmt) "~~")
+                 (str "+" (render-inline (:children node) fmt) "+"))
+    :code      (case fmt
+                 :html (str "<code>" (escape-html (:value node)) "</code>")
+                 :md   (str "`" (:value node) "`")
+                 (str "~" (:value node) "~"))
+    :verbatim  (case fmt
+                 :html (str "<code>" (escape-html (:value node)) "</code>")
+                 :md   (str "`" (:value node) "`")
+                 (str "=" (:value node) "="))
+    :link      (render-link-node node fmt nil)
+    :footnote-ref
+    (let [label (:label node)]
+      (case fmt
+        :html (str "<sup id=\"fnref-" label "\"><a href=\"#fn-"
+                   label "\" class=\"footnote-ref\">" label "</a></sup>")
+        :md   (str "[^" label "]")
+        (str "[fn:" label "]")))
+    :footnote-inline
+    (let [label    (:label node)
+          children (:children node)]
+      (case fmt
+        :html (let [display (if (str/blank? label) "*" label)
+                    text    (escape-html (or (inline-text children) ""))]
+                (str "<sup><a href=\"#\" title=\"" text
+                     "\" class=\"footnote-inline\">" display "</a></sup>"))
+        :md   (str "[^" (or label "") "]")
+        (str "[fn:" (or label "") ":" (or (inline-text children) "") "]")))
+    :timestamp (:raw node)
+    ;; fallback
+    (or (:value node) "")))
 
-       ;; HTML format
-       (= fmt :html)
-       (cond
-         (and is-remote url-is-image (nil? desc))
-         (if affiliated
-           (render-image-html url url affiliated)
-           (str "<img src=\"" (escape-html url) "\" alt=\""
-                (escape-html url) "\">"))
+(defn- render-inline
+  "Render a vector of inline nodes to a string in the given format.
+   If given a string (fallback), escapes for HTML or returns as-is."
+  [nodes fmt]
+  (cond
+    (nil? nodes) ""
+    (string? nodes) (case fmt :html (escape-html nodes) nodes)
+    (empty? nodes) ""
+    :else (str/join (map #(render-inline-node % fmt) nodes))))
 
-         (and is-remote url-is-image desc (not desc-is-image))
-         (if affiliated
-           (render-image-html url desc affiliated)
-           (str "<img src=\"" (escape-html url) "\" alt=\""
-                (escape-html desc) "\">"))
+(defn- extract-single-image-node
+  "If an inline node vector contains exactly one link node that is an image,
+   return that node. Otherwise nil."
+  [nodes]
+  (when (and (sequential? nodes)
+             (= 1 (count nodes))
+             (= :link (:type (first nodes))))
+    (let [node (first nodes)
+          actual-url (if (#{:http :https} (:link-type node))
+                       (:url node) (:target node))]
+      (when (image-url? actual-url) node))))
 
-         (and is-remote desc-is-image)
-         (str "<a href=\"" (escape-html url) "\"><img src=\""
-              (escape-html desc) "\" alt=\"" (escape-html desc) "\"></a>")
+(defn- render-link-node
+  "Render a :link inline node. Optionally accepts affiliated keywords for
+   enhanced image rendering (e.g., paragraphs with #+CAPTION)."
+  [node fmt affiliated]
+  (let [link-type   (:link-type node)
+        target      (:target node)
+        url         (:url node)
+        children    (:children node)
+        has-desc    (seq children)
+        desc-text   (when has-desc (inline-text children))
+        actual-url  (if (#{:http :https} link-type) url (or target url))
+        is-local-file (= link-type :file)
+        is-remote   (#{:http :https} link-type)
+        url-is-image  (image-url? actual-url)
+        desc-is-image (and desc-text (image-url? desc-text))]
+    (cond
+      ;; Local file images: convert to base64 data URI
+      (and is-local-file url-is-image)
+      (if-let [data-uri (image-to-data-uri (or target url))]
+        (cond
+          (= fmt :html)
+          (if affiliated
+            (render-image-html data-uri (or desc-text target) affiliated)
+            (if desc-is-image
+              (str "<a href=\"" data-uri "\"><img src=\""
+                   (escape-html desc-text) "\" alt=\"" (escape-html desc-text) "\"></a>")
+              (str "<img src=\"" data-uri "\" alt=\""
+                   (escape-html (or desc-text target)) "\">")))
+          (= fmt :md)
+          (str "![" (or desc-text target) "](" data-uri ")")
+          :else "")
+        "")
 
-         :else
-         (let [href    (escape-html (resolve-href link-type target url))
-               display (escape-html (resolve-display link-type target url desc))]
-           (str "<a href=\"" href "\">" display "</a>")))
+      ;; HTML format
+      (= fmt :html)
+      (cond
+        (and is-remote url-is-image (not has-desc))
+        (if affiliated
+          (render-image-html url url affiliated)
+          (str "<img src=\"" (escape-html url) "\" alt=\""
+               (escape-html url) "\">"))
 
-       ;; Markdown format
-       (= fmt :md)
-       (cond
-         (and is-remote url-is-image (nil? desc))
-         (str "![" url "](" url ")")
+        (and is-remote url-is-image has-desc (not desc-is-image))
+        (if affiliated
+          (render-image-html url desc-text affiliated)
+          (str "<img src=\"" (escape-html url) "\" alt=\""
+               (escape-html desc-text) "\">"))
 
-         (and is-remote desc-is-image)
-         (str "[![" desc "](" desc ")](" url ")")
+        (and is-remote desc-is-image)
+        (str "<a href=\"" (escape-html url) "\"><img src=\""
+             (escape-html desc-text) "\" alt=\"" (escape-html desc-text) "\"></a>")
 
-         :else
-         (let [href    (resolve-href link-type target url)
-               display (resolve-display link-type target url desc)]
-           (str "[" display "](" href ")")))
+        :else
+        (let [href    (escape-html (resolve-link-href node))
+              display (if has-desc
+                        (render-inline children :html)
+                        (escape-html (case link-type
+                                       (:heading :custom-id) target
+                                       url)))]
+          (str "<a href=\"" href "\">" display "</a>")))
 
-       ;; Other formats (org)
-       :else
-       (let [href    (resolve-href link-type target url)
-             display (resolve-display link-type target url desc)]
-         (if (= display href)
-           (str "[[" href "]]")
-           (str "[[" href "][" display "]]")))))))
+      ;; Markdown format
+      (= fmt :md)
+      (cond
+        (and is-remote url-is-image (not has-desc))
+        (str "![" url "](" url ")")
 
-(defn- apply-format-patterns [text replacements]
-  (reduce (fn [t [k repl]] (str/replace t (format-patterns k) repl))
-          text replacements))
+        (and is-remote desc-is-image)
+        (str "[![" desc-text "](" desc-text ")](" url ")")
 
-(defn- format-text-markdown [text]
-  (if (non-blank? text)
-    (let [;; First, protect existing markdown links and code
-          [protected restore] (protect-patterns
-                               text [[#"\[[^\]]+\]\([^)]+\)" "MD-LINK-"]
-                                     [#"`[^`]+`" "MD-CODE-"]])
-          ;; Convert org links to markdown, then protect them before applying emphasis
-          with-links (-> protected
-                         (str/replace link-with-desc-pattern #(format-link :md %))
-                         (str/replace link-without-desc-pattern #(format-link :md [% (second %) nil])))
-          ;; Protect the newly created markdown links from emphasis processing
-          [link-protected link-restore] (protect-patterns
-                                         with-links [[#"\[[^\]]+\]\([^)]+\)" "ORG-LINK-"]])
-          ;; Now apply emphasis patterns safely
-          ;; Process code/verbatim first
-          with-code (-> link-protected
-                        (str/replace (:code format-patterns) "`$1`")
-                        (str/replace (:verbatim format-patterns) "`$1`"))
-          ;; Protect backtick code from further emphasis processing
-          [code-protected code-restore] (protect-patterns
-                                         with-code [[#"`[^`]+`" "ORG-CODE-"]])
-          formatted (-> code-protected
-                        (apply-format-patterns [[:bold "**$1**"]
-                                                [:italic "*$1*"]
-                                                [:underline "_$1_"]
-                                                [:strike "~~$1~~"]])
-                        (str/replace footnote-ref-pattern "[^$1]"))]
-      (restore (link-restore (code-restore formatted))))
-    ""))
+        :else
+        (let [href    (resolve-link-href node)
+              display (if has-desc
+                        (render-inline children :md)
+                        (case link-type
+                          (:heading :custom-id) target
+                          url))]
+          (str "[" display "](" href ")")))
 
-(defn- format-footnote-html
-  "Format a footnote reference or inline footnote to HTML.
-   For [fn:label] -> link to footnote definition with id for back-link
-   For [fn:label:content] or [fn::content] -> inline with tooltip"
-  [match]
-  (let [full (first match)]
-    (if-let [[_ label content] (re-matches footnote-inline-pattern full)]
-      ;; Inline footnote [fn:label:content] or [fn::content]
-      (let [display (if (str/blank? label) "*" label)
-            escaped-content (escape-html content)]
-        (str "<sup><a href=\"#\" title=\"" escaped-content
-             "\" class=\"footnote-inline\">" display "</a></sup>"))
-      ;; Regular footnote reference [fn:label]
-      (if-let [[_ label] (re-matches footnote-ref-pattern full)]
-        (str "<sup id=\"fnref-" label "\"><a href=\"#fn-"
-             label "\" class=\"footnote-ref\">" label "</a></sup>")
-        full))))
-
-(defn- format-text-html [text]
-  (if (non-blank? text)
-    (let [;; First protect macros and org links before escaping HTML
-          ;; Macro pattern must come first: {{{name(args)}}} where args can contain anything
-          [protected-content restore-content] (protect-patterns
-                                               text [[#"\{\{\{.+?\}\}\}" "ORG-MACRO-"]
-                                                     [link-with-desc-pattern "ORG-LINK-DESC-"]
-                                                     [link-without-desc-pattern "ORG-LINK-PLAIN-"]])
-          ;; Escape HTML in the text (but not in protected content)
-          escaped (escape-html protected-content)
-          ;; Restore org links and macros, convert links to HTML
-          with-links (-> (restore-content escaped)
-                         (str/replace link-with-desc-pattern #(format-link :html %))
-                         (str/replace link-without-desc-pattern #(format-link :html [% (second %) nil])))
-          ;; Protect the HTML links and macros from emphasis processing
-          [protected restore] (protect-patterns
-                               with-links [[#"<a\s[^>]*>[^<]*</a>" "HTML-LINK-"]
-                                           [#"\{\{\{.+?\}\}\}" "HTML-MACRO-"]])
-          ;; Now apply emphasis patterns safely, then handle footnotes
-          ;; Process code/verbatim first so their content is protected
-          with-code (-> protected
-                        (str/replace (:code format-patterns) "<code>$1</code>")
-                        (str/replace (:verbatim format-patterns) "<code>$1</code>"))
-          ;; Protect code tags from further emphasis processing
-          [code-protected code-restore] (protect-patterns with-code [[#"<code>[^<]*</code>" "HTML-CODE-"]])
-          formatted (-> code-protected
-                        (str/replace (:bold format-patterns) "<strong>$1</strong>")
-                        (str/replace (:italic format-patterns) "<em>$1</em>")
-                        (str/replace (:underline format-patterns) "<u>$1</u>")
-                        (str/replace (:strike format-patterns) "<del>$1</del>")
-                        ;; Handle inline footnotes first (they have :content), then regular refs
-                        (str/replace footnote-inline-pattern format-footnote-html)
-                        (str/replace footnote-ref-pattern format-footnote-html))]
-      (restore (code-restore formatted)))
-    ""))
-
-(defn- extract-single-image-link
-  "If text contains exactly one org link and it's an image, return [url desc].
-   Otherwise return nil."
-  [text]
-  (let [trimmed (str/trim text)]
-    (when-let [[_ url desc] (re-matches #"^\[\[([^\]]+)\](?:\[([^\]]+)\])?\]$" trimmed)]
-      (let [parsed (parse-link url)
-            actual-url (if (#{:http :https} (:type parsed)) url (:target parsed))]
-        (when (image-url? actual-url)
-          [url desc])))))
-
-(defn- format-paragraph-html
-  "Format a paragraph for HTML, with special handling for image-only paragraphs
-   that have affiliated keywords."
-  [content affiliated]
-  (if-let [[url desc] (and affiliated (extract-single-image-link content))]
-    ;; Image-only paragraph with affiliated keywords: use enhanced rendering
-    (let [match [nil url desc]]
-      (format-link :html match affiliated))
-    ;; Regular paragraph
-    (str "<p>" (format-text-html content) "</p>")))
-
-(defn- format-text
-  "Format text according to output format. For :org, returns text unchanged."
-  [fmt text]
-  (case fmt
-    :html (format-text-html text)
-    :md (format-text-markdown text)
-    text))
+      ;; Org format
+      :else
+      (let [href    (resolve-link-href node)
+            display (when has-desc (render-inline children :org))]
+        (if display
+          (str "[[" href "][" display "]]")
+          (str "[[" href "]]"))))))
 
 ;; AST Content Rendering
 (defn- render-content-in-node [node render-format]
-  (let [fmt #(format-text render-format %)
-        render-children #(mapv (fn [c] (render-content-in-node c render-format)) %)
+  (let [fmt #(render-inline % render-format)
+        render-children* #(mapv (fn [c] (render-content-in-node c render-format)) %)
         result (case (:type node)
-                 :document (-> node (update :title #(when % (fmt %))) (update :children render-children))
-                 :section (-> node (update :title #(when % (fmt %))) (update :children render-children))
+                 :document (-> node (update :title #(when % (fmt %))) (update :children render-children*))
+                 :section (-> node (update :title #(when % (fmt %))) (update :children render-children*))
                  :paragraph (update node :content fmt)
                  :list (update node :items #(mapv (fn [i] (render-content-in-node i render-format)) %))
-                 :list-item (let [node (update node :children render-children)]
+                 :list-item (let [node (update node :children render-children*)]
                               (if (:term node)
                                 (-> node (update :term fmt) (update :definition fmt))
                                 (update node :content fmt)))
                  :table (update node :rows #(mapv (fn [row] (mapv fmt row)) %))
-                 :quote-block (update node :content #(->> (str/split-lines %) (map fmt) (str/join "\n")))
+                 :quote-block (update node :children render-children*)
                  :footnote-def (update node :content fmt)
                  :block (if (#{:src :example :export} (:block-type node)) node
-                          (update node :content #(->> (str/split-lines %) (map fmt) (str/join "\n"))))
+                          (update node :content
+                                  #(render-inline (parse-inline %) render-format)))
                  node)]
     (remove-empty-vals result)))
 
@@ -512,21 +414,19 @@ li > p { margin-top: 0.5em; }
 
 (defn- render-table [rows has-header fmt]
   (if (empty? rows) ""
-    (let [format-cell #(format-text fmt %)
-          ;; Find max number of columns across all rows
+    (let [;; Find max number of columns across all rows
           max-cols (reduce max 0 (map count rows))
           ;; Pad helper for ragged rows
           pad-row (fn [row] (let [missing (- max-cols (count row))]
                               (if (pos? missing)
-                                (into (vec row) (repeat missing ""))
+                                (into (vec row) (repeat missing []))
                                 (vec row))))
-          ;; Pad raw rows and compute col-widths from raw text
-          padded-raw (mapv pad-row rows)
-          padded-rows (mapv (fn [row] (mapv format-cell row)) padded-raw)
-          col-widths (when (and (seq padded-raw) (pos? max-cols))
+          ;; Render all cells to strings, then compute widths from rendered text
+          rendered-rows (mapv (fn [row] (mapv #(render-inline % fmt) (pad-row row))) rows)
+          col-widths (when (and (seq rendered-rows) (pos? max-cols))
                        (apply mapv (fn [& cells]
                                      (apply max min-table-cell-width (map count cells)))
-                              padded-raw))
+                              rendered-rows))
           pad-cell (fn [cell width] (str cell (repeat-str (- width (count cell)) " ")))
           format-row (fn [row]
                        (str "| " (str/join " | " (map-indexed #(pad-cell %2 (nth col-widths %1 min-table-cell-width)) row)) " |"))
@@ -535,9 +435,9 @@ li > p { margin-top: 0.5em; }
       (if (nil? col-widths)
         ""
         (if has-header
-          (str (format-row (first padded-rows)) "\n" separator "\n"
-               (str/join "\n" (map format-row (rest padded-rows))))
-          (str/join "\n" (map format-row padded-rows)))))))
+          (str (format-row (first rendered-rows)) "\n" separator "\n"
+               (str/join "\n" (map format-row (rest rendered-rows))))
+          (str/join "\n" (map format-row rendered-rows)))))))
 
 (declare ^:private render-node)
 
@@ -556,12 +456,13 @@ li > p { margin-top: 0.5em; }
         children-str (when (seq (:children item))
                        (str/join "\n" (map #(render-node % fmt (inc level)) (:children item))))]
     (if (and (:term item) (= fmt :md))
-      (str indent (format-text fmt (:term item)) "\n"
-           indent ":   " (format-text fmt (or (:definition item) ""))
+      (str indent (render-inline (:term item) :md) "\n"
+           indent ":   " (render-inline (or (:definition item) []) :md)
            (when children-str (str "\n" children-str)))
       (let [content (if (:term item)
-                      (str (:term item) " :: " (or (:definition item) ""))
-                      (format-text fmt (:content item)))]
+                      (str (render-inline (:term item) fmt) " :: "
+                           (render-inline (or (:definition item) []) fmt))
+                      (render-inline (:content item) fmt))]
         (str indent marker content (when children-str (str "\n" children-str)))))))
 
 (defn- render-children
@@ -638,7 +539,7 @@ li > p { margin-top: 0.5em; }
                           (.append sb "</li>\n</ul>\n"))
                         (let [{:keys [level title section-number id]} entry
                               num-str (if section-number (str section-number " ") "")
-                              link (str "<a href=\"#" id "\">" num-str (format-text-html title) "</a>")]
+                              link (str "<a href=\"#" id "\">" num-str (render-inline title :html) "</a>")]
                           (cond
                             ;; Deeper level: open new sublist(s)
                             (> level prev-level)
@@ -666,8 +567,8 @@ li > p { margin-top: 0.5em; }
                   (let [indent (repeat-str (* 2 (dec level)) " ")
                         num-str (when section-number (str section-number " "))
                         label (if (= fmt :org)
-                                (str num-str title)
-                                (str "[" num-str (format-text :md title) "](#" (heading-to-slug title) ")"))]
+                                (str num-str (render-inline title :org))
+                                (str "[" num-str (render-inline title :md) "](#" (heading-to-slug title) ")"))]
                     (str indent "- " label))))
            (str/join "\n")))))
 
@@ -683,9 +584,9 @@ li > p { margin-top: 0.5em; }
     (case fmt
       :html (let [footnotes (filter #(= (:type %) :footnote-def) (:children node))
                   title-html (when-let [t (:title node)]
-                               (str "<header>\n<h1 class=\"document-title\">" (format-text-html t) "</h1>\n"
+                               (str "<header>\n<h1 class=\"document-title\">" (render-inline t :html) "</h1>\n"
                                     (when-let [st (get-in node [:meta :subtitle])]
-                                      (str "<p class=\"subtitle\">" (format-text-html st) "</p>\n"))
+                                      (str "<p class=\"subtitle\">" (render-inline (parse-inline st) :html) "</p>\n"))
                                     "</header>\n"))
                   toc-html (when toc-str (str toc-str "\n"))
                   main-content (str title-html toc-html
@@ -697,7 +598,7 @@ li > p { margin-top: 0.5em; }
                                    (str "<aside class=\"footnotes\">\n"
                                         (str/join "\n" (map #(render-node % fmt level) footnotes))
                                         "\n</aside>"))]
-              (html-template (:title node "Untitled Document")
+              (html-template (or (inline-text (:title node)) "Untitled Document")
                              (str main-content (when footnotes-html (str "\n" footnotes-html)))))
       :org (let [meta (:meta node)
                  meta-str (cond
@@ -716,7 +617,7 @@ li > p { margin-top: 0.5em; }
                   (when toc-str (str toc-str "\n\n"))
                   (render-children (:children node) fmt)))
       ;; default: markdown
-      (let [title (if-let [t (:title node)] (str "# " (format-text :md t) "\n\n") "")]
+      (let [title (if-let [t (:title node)] (str "# " (render-inline t :md) "\n\n") "")]
         (str title
              (when toc-str (str toc-str "\n\n"))
              (render-children (:children node) fmt))))))
@@ -796,7 +697,7 @@ li > p { margin-top: 0.5em; }
                   tags-html (when (seq (:tags node))
                               (str " <span class=\"tags\">:" (str/join ":" (:tags node)) ":</span>"))]
               (str "<section id=\"" section-id "\">\n<" tag ">"
-                   sec-num-html todo-html priority-html (format-text-html (:title node)) tags-html
+                   sec-num-html todo-html priority-html (render-inline (:title node) :html) tags-html
                    "</" tag ">\n"
                    (when planning-str (str planning-str "\n"))
                    (render-children (:children node) fmt) "\n</section>"))
@@ -810,7 +711,7 @@ li > p { margin-top: 0.5em; }
                  props-str (render-properties-org (:properties node))
                  children-str (render-children (:children node) fmt)]
              (str blanks-before
-                  stars " " todo-str priority-str sec-num-str (:title node) tags-str
+                  stars " " todo-str priority-str sec-num-str (render-inline (:title node) :org) tags-str
                   (when planning-str (str "\n" planning-str))
                   (when props-str (str "\n" props-str))
                   blanks-after-title
@@ -824,34 +725,38 @@ li > p { margin-top: 0.5em; }
             tags-str (when (seq (:tags node)) (str " `:" (str/join ":" (:tags node)) ":`"))
             heading (str (repeat-str (min (:level node) max-heading-level) "#") " "
                          todo-str priority-str sec-num-str
-                         (format-text :md (:title node))
+                         (render-inline (:title node) :md)
                          tags-str)]
         (str blanks-before heading "\n"
              (when planning-str (str planning-str "\n"))
              blanks-after-title (render-children (:children node) fmt))))))
 
 (defn- render-paragraph [node fmt]
-  (case fmt
-    :html (format-paragraph-html (:content node) (:affiliated node))
-    :org (let [affiliated (:affiliated node)
-               attr-lines (when affiliated
-                            (str/join "\n"
-                                      (concat
-                                       (when-let [caption (:caption affiliated)]
-                                         [(str "#+caption: " caption)])
-                                       (when-let [aff-name (:name affiliated)]
-                                         [(str "#+name: " aff-name)])
-                                       (for [[attr-type attrs] (:attr affiliated)
-                                             :when (seq attrs)]
-                                         (str "#+attr_" (name attr-type) ": "
-                                              (str/join " " (for [[k v] attrs]
-                                                              (if (str/includes? v " ")
-                                                                (str ":" (name k) " \"" v "\"")
-                                                                (str ":" (name k) " " v)))))))))]
-           (if (seq attr-lines)
-             (str attr-lines "\n" (:content node))
-             (:content node)))
-    (format-text :md (:content node))))
+  (let [content (:content node)]
+    (case fmt
+      :html (if-let [img-node (and (:affiliated node) (extract-single-image-node content))]
+              (render-link-node img-node :html (:affiliated node))
+              (str "<p>" (render-inline content :html) "</p>"))
+      :org (let [affiliated (:affiliated node)
+                 content-str (render-inline content :org)
+                 attr-lines (when affiliated
+                              (str/join "\n"
+                                        (concat
+                                         (when-let [caption (:caption affiliated)]
+                                           [(str "#+caption: " caption)])
+                                         (when-let [aff-name (:name affiliated)]
+                                           [(str "#+name: " aff-name)])
+                                         (for [[attr-type attrs] (:attr affiliated)
+                                               :when (seq attrs)]
+                                           (str "#+attr_" (name attr-type) ": "
+                                                (str/join " " (for [[k v] attrs]
+                                                                (if (str/includes? v " ")
+                                                                  (str ":" (name k) " \"" v "\"")
+                                                                  (str ":" (name k) " " v)))))))))]
+             (if (seq attr-lines)
+               (str attr-lines "\n" content-str)
+               content-str))
+      (render-inline content :md))))
 
 (defn- render-list-node [node fmt level]
   (case fmt
@@ -872,16 +777,16 @@ li > p { margin-top: 0.5em; }
     (let [children-html (when (seq (:children node))
                           (str "\n" (str/join "\n" (map #(render-node % fmt) (:children node)))))]
       (if (:term node)
-        (str "<dt>" (format-text-html (:term node)) "</dt>\n<dd>"
-             (format-text-html (:definition node)) children-html "</dd>")
-        (str "<li>" (format-text-html (:content node)) children-html "</li>")))
+        (str "<dt>" (render-inline (:term node) :html) "</dt>\n<dd>"
+             (render-inline (:definition node) :html) children-html "</dd>")
+        (str "<li>" (render-inline (:content node) :html) children-html "</li>")))
     (render-list-item node 0 false level fmt)))
 
 (defn- render-table-node [node fmt]
   (if (= fmt :html)
     (let [rows (:rows node)
           has-header (:has-header node)
-          cell (fn [tag content] (str "<" tag ">" (format-text-html content) "</" tag ">"))]
+          cell (fn [tag content] (str "<" tag ">" (render-inline content :html) "</" tag ">"))]
       (if (empty? rows) ""
         (str "<table>\n"
              (when has-header
@@ -916,13 +821,16 @@ li > p { margin-top: 0.5em; }
 (defn- render-quote-block [node fmt]
   (case fmt
     :html (str "<blockquote>\n"
-               (->> (str/split (:content node) #"\n\n+")
-                    (map #(str "<p>" (format-text-html %) "</p>"))
-                    (str/join "\n"))
+               (str/join "\n" (map #(render-node % fmt) (:children node)))
                "\n</blockquote>")
-    :org (str "#+BEGIN_QUOTE\n" (escape-block-content (:content node)) "\n#+END_QUOTE")
-    (->> (str/split-lines (:content node))
-         (map #(str "> " (format-text :md %)))
+    :org (str "#+BEGIN_QUOTE\n"
+              (escape-block-content
+               (str/join "\n" (map #(render-inline (:content %) :org) (:children node))))
+              "\n#+END_QUOTE")
+    (->> (:children node)
+         (mapcat (fn [child]
+                   (let [text (render-inline (:content child) :md)]
+                     (map #(str "> " %) (str/split-lines text)))))
          (str/join "\n"))))
 
 (defn- render-comment-node [node fmt]
@@ -942,17 +850,17 @@ li > p { margin-top: 0.5em; }
     :html (let [label (escape-html (:label node))]
             (str "<div class=\"footnote\" id=\"fn-" label "\">"
                  "<a href=\"#fnref-" label "\" class=\"footnote-backref\"><sup>" label "</sup></a> "
-                 (format-text-html (:content node)) "</div>"))
-    :org (str "[fn:" (:label node) "] " (:content node))
-    (str "[^" (:label node) "]: " (format-text :md (:content node)))))
+                 (render-inline (:content node) :html) "</div>"))
+    :org (str "[fn:" (:label node) "] " (render-inline (:content node) :org))
+    (str "[^" (:label node) "]: " (render-inline (:content node) :md))))
 
 (defn- render-generic-block [node fmt]
   (let [block-type (:block-type node)
         export-type (:args node)]
     (case fmt
       :html (case block-type
-              :warning (str "<div class=\"warning\">" (format-text-html (:content node)) "</div>")
-              :note (str "<div class=\"note\">" (format-text-html (:content node)) "</div>")
+              :warning (str "<div class=\"warning\">" (render-inline (parse-inline (:content node)) :html) "</div>")
+              :note (str "<div class=\"note\">" (render-inline (parse-inline (:content node)) :html) "</div>")
               :example (str "<pre>" (escape-html (:content node)) "</pre>")
               :export (if (= export-type "html") (:content node) "")
               (str "<div class=\"block-" (name block-type) "\">"
@@ -1102,9 +1010,11 @@ li > p { margin-top: 0.5em; }
   [node]
   (letfn [(walk [n path]
             (let [is-section (= (:type n) :section)
-                  new-path (if is-section (conj path (:title n)) path)
+                  title-text (when is-section (or (inline-text (:title n)) ""))
+                  new-path (if is-section (conj path title-text) path)
                   self (when is-section
-                         (let [{:keys [planning title todo]} n]
+                         (let [{:keys [planning todo]} n
+                               title title-text]
                            (cond-> []
                              (:scheduled planning)
                              (conj {:ics-type :vevent :title title :path new-path :todo todo
@@ -1223,21 +1133,24 @@ li > p { margin-top: 0.5em; }
 
 ;; Statistics
 (defn- count-words
-  "Count words in a string."
+  "Count words in a string or vector of inline nodes."
   [s]
-  (if (non-blank? s) (count (re-seq #"\S+" s)) 0))
+  (let [text (cond (string? s) s
+                   (sequential? s) (inline-text s)
+                   :else nil)]
+    (if (non-blank? text) (count (re-seq #"\S+" text)) 0)))
 
 (defn- count-images
-  "Count image links in a string.
-   Matches [[path/to/image.png]] or [[path/to/image.png][description]]"
-  [s]
-  (if (non-blank? s)
-    (let [with-desc (re-seq link-with-desc-pattern s)
-          matched-strs (set (map first with-desc))
-          without-desc (remove #(matched-strs (first %))
-                               (re-seq link-without-desc-pattern s))
-          links (concat with-desc without-desc)]
-      (count (filter (fn [[_ target]] (image-url? target)) links)))
+  "Count image links in a vector of inline nodes (or string for backward compat)."
+  [nodes]
+  (if (sequential? nodes)
+    (reduce (fn [n node]
+              (+ n (case (:type node)
+                     :link (if (image-url? (or (:target node) (:url node))) 1 0)
+                     (:bold :italic :underline :strike :footnote-inline)
+                     (count-images (:children node))
+                     0)))
+            0 nodes)
     0))
 
 (defn- content-stats

@@ -140,7 +140,10 @@
           "type" : "list-item"
         } ],
         "ordered" : false,
-        "description" : "Emacs",
+        "description" : [ {
+          "type" : "text",
+          "value" : "Emacs"
+        } ],
         "type" : "list"
       } ],
       "type" : "section",
@@ -184,7 +187,10 @@
       "path" : [ "Blocks", "Quote Block" ],
       "blank-lines-before" : 1,
       "children" : [ {
-        "content" : "The best way to predict the future is to invent it.\n-- Alan Kay",
+        "children" : [ {
+          "content" : "The best way to predict the future is to invent it.\n-- Alan Kay",
+          "type" : "paragraph"
+        } ],
         "type" : "quote-block"
       } ],
       "type" : "section",
