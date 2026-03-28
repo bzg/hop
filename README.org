@@ -33,8 +33,12 @@ Filter:
 Options:
 
 : hop -b https://base.io -f html index.org    # Prepend base URL to relative links
-: hop -c org -f html notes.org                # Use "org" Pico 2 CSS theme
-: hop -c custom.css -f html notes.org         # Use a local CSS file
+: hop -c https://example.com/style.css -f html notes.org  # Use a remote CSS URL
+: hop -c file:///path/to/style.css -f html notes.org      # Inline a local file via file:// URL
+: hop -c custom.css -f html notes.org                     # Inline a local .css file
+: hop -c ../styles/theme.css -f html notes.org            # Inline via relative path
+: hop -c /home/user/theme.css -f html notes.org           # Inline via absolute path
+: hop -c org -f html notes.org                            # Use "org" pico-theme from CDN
 : hop -n notes.org                            # Preserve original line breaks
 : hop -s notes.org                            # Display document statistics
 

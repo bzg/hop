@@ -402,7 +402,9 @@ li > p { margin-top: 0.5em; }
          "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n"
          "  <title>" (escape-html title) "</title>\n"
          (when *css-theme*
-           (str "  <link rel=\"stylesheet\" href=\"" *css-theme* "\">\n"))
+           (if-let [url (:link *css-theme*)]
+             (str "  <link rel=\"stylesheet\" href=\"" url "\">\n")
+             (str "  <style>\n" (:inline *css-theme*) "\n  </style>\n")))
          (when has-code
            (str "  <link rel=\"stylesheet\" href=\"" hljs-cdn "/styles/default.min.css\">\n"))
          "  <style>\n" html-styles "\n  </style>\n"
@@ -1270,26 +1272,38 @@ li > p { margin-top: 0.5em; }
 
 ;; CLI Options
 
-(def ^:private predefined-css-themes #{"org" "swh" "doric" "lincoln" "teletype" "dsfr"})
-
 (defn- resolve-css-theme
-  "Resolve a CSS theme value to a stylesheet URL or local path.
-  Predefined themes resolve to the pico-themes CDN.
-  A URL (http/https) is used as-is.
-  Otherwise, treated as a local file path (must exist)."
+  "Resolve a CSS theme value to a map with :link (URL) or :inline (CSS content).
+  Resolution order:
+  1. https:// URL → {:link url}
+  2. file:/// URL → {:inline content} (reads local file)
+  3. .css filename matching a local file → {:inline content}
+  4. bare name (no spaces) → pico-themes CDN {:link url}"
   [v]
   (cond
-    (predefined-css-themes v) (str pico-themes-cdn v ".css")
-    (re-matches #"https?://.*" v) v
-    (.exists (java.io.File. v)) v
-    :else (throw (ex-info (str "CSS theme not found: " v
-                               " (expected one of " (str/join ", " (sort predefined-css-themes))
-                               ", a URL, or a local file path)")
-                          {:theme v}))))
+    (re-matches #"https?://.*" v)
+    {:link v}
+
+    (str/starts-with? v "file:///")
+    (let [path (subs v 7)]
+      (if (.exists (java.io.File. path))
+        {:inline (slurp path)}
+        (throw (ex-info (str "CSS theme file not found: " path) {:theme v}))))
+
+    (and (str/ends-with? v ".css") (.exists (java.io.File. v)))
+    {:inline (slurp v)}
+
+    (re-matches #"\S+" v)
+    {:link (str pico-themes-cdn v ".css")}
+
+    :else
+    (throw (ex-info (str "CSS theme not found: " v
+                         " (expected a URL, a local .css file, or a pico-theme name)")
+                    {:theme v}))))
 
 (def ^:private cli-options
   [["-b" "--base-url URL" "Base URL prepended to relative links (include trailing slash)"]
-   ["-c" "--css-theme THEME" "CSS theme: org, swh, doric, lincoln, teletype, a local .css file, or a URL"]
+   ["-c" "--css-theme THEME" "CSS theme: a URL, a local .css file, or a pico-theme name (e.g. org, doric)"]
    ["-f" "--format FORMAT" "Output format: json, edn, yaml, md, html, org, or ics"
     :default "json" :validate [#{"json" "edn" "yaml" "md" "html" "org" "ics"} "Must be: json, edn, yaml, md, html, org, ics"]]
    ["-h" "--help" "Show help"]
