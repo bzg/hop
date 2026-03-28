@@ -396,7 +396,7 @@ li > p { margin-top: 0.5em; }
 (def ^:private hljs-cdn "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0")
 
 (defn- html-template [title content]
-  (let [has-code (str/includes? content "<code")]
+  (let [has-code (str/includes? content "<pre><code")]
     (str "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n"
          "  <meta charset=\"UTF-8\">\n"
          "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n"
