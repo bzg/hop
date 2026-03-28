@@ -1,5 +1,4 @@
 {:paths ["src" "test"]
- :deps {org.clojars.bzg/organ {:mvn/version "0.3.0"}}
  :bbin/bin {hop {:main-opts ["-m" "bzg.hop"]}}
 
  :tasks
