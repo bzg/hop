@@ -27,7 +27,7 @@
 ;; Dynamic vars for rendering
 (def ^:dynamic *base-url* nil)
 (def ^:dynamic *css-theme* nil)
-(def ^:private pico-themes-cdn "https://cdn.jsdelivr.net/gh/bzg/pico-themes@main/")
+(def ^:private pico-themes-cdn "https://cdn.jsdelivr.net/gh/bzg/pico-themes@latest/")
 
 ;; Inline Node Rendering
 ;; Organ 0.2.0 provides parsed inline nodes. These functions render them
