@@ -1276,8 +1276,10 @@ li > p { margin-top: 0.5em; }
   "Resolve a CSS theme value to a map with :link (URL) or :inline (CSS content).
   Resolution order:
   1. https:// URL → {:link url}
-  2. file:/// URL → {:inline content} (reads local file)
-  3. .css filename matching a local file → {:inline content}
+  2. file:/// URL → {:inline content} (reads local file);
+     if the path has no .css extension, treat as pico-theme name
+  3. .css filename matching a local file → {:inline content};
+     if the file doesn't exist, return nil (no CDN fall-back)
   4. bare name (no spaces) → pico-themes CDN {:link url}"
   [v]
   (cond
@@ -1286,12 +1288,15 @@ li > p { margin-top: 0.5em; }
 
     (str/starts-with? v "file:///")
     (let [path (subs v 7)]
-      (if (.exists (java.io.File. path))
-        {:inline (slurp path)}
-        (throw (ex-info (str "CSS theme file not found: " path) {:theme v}))))
+      (if (str/ends-with? path ".css")
+        (if (.exists (java.io.File. path))
+          {:inline (slurp path)}
+          (throw (ex-info (str "CSS theme file not found: " path) {:theme v})))
+        {:link (str pico-themes-cdn path ".css")}))
 
-    (and (str/ends-with? v ".css") (.exists (java.io.File. v)))
-    {:inline (slurp v)}
+    (str/ends-with? v ".css")
+    (when (.exists (java.io.File. v))
+      {:inline (slurp v)})
 
     (re-matches #"\S+" v)
     {:link (str pico-themes-cdn v ".css")}
