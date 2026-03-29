@@ -156,7 +156,7 @@
 (defn- prepend-base-url
   "Prepend *base-url* to href when it is a relative path."
   [href]
-  (if (and *base-url*
+  (if (and href *base-url*
            (not (str/starts-with? href "/"))
            (not (str/starts-with? href "#"))
            (not (re-find #"^[a-zA-Z][a-zA-Z0-9+.-]*:" href)))
@@ -518,7 +518,8 @@ li > p { margin-top: 0.5em; }
        (let [entry {:level (:level child)
                     :title (:title child)
                     :section-number (:section-number child)
-                    :id (or (get-in child [:properties :custom_id])
+                    :id (or (:section-id child)
+                            (get-in child [:properties :custom_id])
                             (heading-to-slug (:title child)))}]
          (into (conj entries entry)
                (collect-toc-entries (:children child) max-depth)))
@@ -541,7 +542,7 @@ li > p { margin-top: 0.5em; }
                           (.append sb "</li>\n</ul>\n"))
                         (let [{:keys [level title section-number id]} entry
                               num-str (if section-number (str section-number " ") "")
-                              link (str "<a href=\"#" id "\">" num-str (render-inline title :html) "</a>")]
+                              link (str "<a href=\"#" (escape-html id) "\">" num-str (render-inline title :html) "</a>")]
                           (cond
                             ;; Deeper level: open new sublist(s)
                             (> level prev-level)
@@ -664,10 +665,12 @@ li > p { margin-top: 0.5em; }
                                 (let [rep (get repeaters kw)
                                       rep-str (if rep (str " " rep) "")
                                       ts (if (str/includes? iso "/")
-                                           (let [[start end] (str/split iso #"/")
-                                                 [d t1] (str/split start #"T")
-                                                 t2 (second (str/split end #"T"))]
-                                             (str "<" d " " t1 "-" t2 rep-str ">"))
+                                           (let [[start end] (str/split iso #"/")]
+                                             (if (and (str/includes? start "T") (str/includes? end "T"))
+                                               (let [[d t1] (str/split start #"T")
+                                                     t2 (second (str/split end #"T"))]
+                                                 (str "<" d " " t1 "-" t2 rep-str ">"))
+                                               (str "<" start rep-str ">--<" end rep-str ">")))
                                            (if (str/includes? iso "T")
                                              (let [[d t] (str/split iso #"T")]
                                                (str "<" d " " t rep-str ">"))
@@ -687,7 +690,8 @@ li > p { margin-top: 0.5em; }
     (case fmt
       :html (let [lvl (min (:level node) max-heading-level)
                   tag (str "h" lvl)
-                  section-id (or (get-in node [:properties :custom_id])
+                  section-id (or (:section-id node)
+                                 (get-in node [:properties :custom_id])
                                  (heading-to-slug (:title node)))
                   sec-num-html (when-let [sn (:section-number node)]
                                  (str "<span class=\"section-number\">" sn "</span> "))
@@ -698,7 +702,7 @@ li > p { margin-top: 0.5em; }
                                   (str "<span class=\"priority\">[#" (:priority node) "]</span> "))
                   tags-html (when (seq (:tags node))
                               (str " <span class=\"tags\">:" (str/join ":" (:tags node)) ":</span>"))]
-              (str "<section id=\"" section-id "\">\n<" tag ">"
+              (str "<section id=\"" (escape-html section-id) "\">\n<" tag ">"
                    sec-num-html todo-html priority-html (render-inline (:title node) :html) tags-html
                    "</" tag ">\n"
                    (when planning-str (str planning-str "\n"))
@@ -827,12 +831,12 @@ li > p { margin-top: 0.5em; }
                "\n</blockquote>")
     :org (str "#+BEGIN_QUOTE\n"
               (escape-block-content
-               (str/join "\n" (map #(render-inline (:content %) :org) (:children node))))
+               (str/join "\n" (map #(render-node % :org) (:children node))))
               "\n#+END_QUOTE")
     (->> (:children node)
-         (mapcat (fn [child]
-                   (let [text (render-inline (:content child) :md)]
-                     (map #(str "> " %) (str/split-lines text)))))
+         (map #(render-node % :md))
+         (mapcat str/split-lines)
+         (map #(str "> " %))
          (str/join "\n"))))
 
 (defn- render-comment-node [node fmt]
@@ -926,6 +930,30 @@ li > p { margin-top: 0.5em; }
      (if (:warning node)
        (str "<!-- Warning at line " (:error-line node) ": " (:warning node) " -->")
        ""))))
+
+;; Section ID assignment (deduplication)
+(defn- assign-section-ids
+  "Walk the AST and assign a unique :section-id to each :section node.
+   Uses custom_id when available, otherwise derives from heading slug.
+   Appends -1, -2, etc. to disambiguate duplicate IDs."
+  [ast]
+  (let [used (atom {})]
+    (letfn [(unique-id [base]
+              (let [n (get @used base 0)]
+                (swap! used assoc base (inc n))
+                (if (zero? n) base (str base "-" n))))
+            (walk [node]
+              (case (:type node)
+                :section (let [base (or (get-in node [:properties :custom_id])
+                                        (heading-to-slug (:title node)))]
+                           (-> node
+                               (assoc :section-id (unique-id base))
+                               (update :children #(mapv walk %))))
+                (:document :quote-block) (update node :children #(mapv walk %))
+                :list (update node :items #(mapv walk %))
+                :list-item (update node :children #(mapv walk %))
+                node))]
+      (walk ast))))
 
 ;; Section numbering
 (defn- number-sections
@@ -1124,9 +1152,10 @@ li > p { margin-top: 0.5em; }
                     ["END:VCALENDAR"]))
          "\r\n")))
 
-(defn render-ast-as-markdown [ast] (render-node (number-sections ast) :md))
-(defn render-ast-as-html [ast] (render-node (number-sections ast) :html))
-(defn render-ast-as-org [ast] (render-node (number-sections ast) :org))
+(defn- prepare-ast [ast] (-> ast number-sections assign-section-ids))
+(defn render-ast-as-markdown [ast] (render-node (prepare-ast ast) :md))
+(defn render-ast-as-html [ast] (render-node (prepare-ast ast) :html))
+(defn render-ast-as-org [ast] (render-node (prepare-ast ast) :org))
 
 ;; Output Formatting
 (defn format-ast-as-json [ast] (json/generate-string ast {:pretty true}))
@@ -1295,8 +1324,9 @@ li > p { margin-top: 0.5em; }
         {:link (str pico-themes-cdn path ".css")}))
 
     (str/ends-with? v ".css")
-    (when (.exists (java.io.File. v))
-      {:inline (slurp v)})
+    (if (.exists (java.io.File. v))
+      {:inline (slurp v)}
+      (throw (ex-info (str "CSS theme file not found: " v) {:theme v})))
 
     (re-matches #"\S+" v)
     {:link (str pico-themes-cdn v ".css")}
