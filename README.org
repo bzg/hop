@@ -63,10 +63,10 @@ Assuming [[https://github.com/babashka/bbin][bbin]] is installed:
 
 * Contributing
 
-- Send a [[mailto:~bzg/orgology@lists.sr.ht?subject=\[BUG\] hop: <SHORT EXPLICIT BUG DESCRIPTION>][bug report]]
-- Send a [[mailto:~bzg/orgology@lists.sr.ht?subject=\[PATCH\] hop: <COMMIT SUMMARY>][patch]] (please use =git format-patch=)
-- Send a [[mailto:~bzg/orgology@lists.sr.ht?subject=\[FR\] hop: <FEATURE REQUEST>][feature request]]
-- Share any [[mailto:~bzg/orgology@lists.sr.ht?subject=hop: <ANYTHING>][other question or idea]]
+- Send a [[mailto:~bzg/orgology@lists.sr.ht][bug report]] with =[BUG] hop: <SHORT EXPLICIT BUG DESCRIPTION>=
+- Send a [[mailto:~bzg/orgology@lists.sr.ht][patch]] with =[PATCH] hop: <COMMIT SUMMARY>=
+- Send a [[mailto:~bzg/orgology@lists.sr.ht][feature request]] with =[FR] hop: <FEATURE REQUEST>=
+- Share any [[mailto:~bzg/orgology@lists.sr.ht][other question or idea]]
 
 You can also [[mailto:bzg@bzg.fr][send me an email]] and support my work on [[https://liberapay.com/bzg/][liberapay]].
 
