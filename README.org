@@ -61,9 +61,12 @@ Assuming [[https://github.com/babashka/bbin][bbin]] is installed:
 : ~$ bb test:generate
 : ~$ bb test
 
-* Feedback
+* Contributing
 
-Send an email to *bzg@bzg.fr*.
+- Send a [[mailto:~bzg/orgology@lists.sr.ht?subject=\[BUG\] hop: <SHORT EXPLICIT BUG DESCRIPTION>][bug report]]
+- Send a [[mailto:~bzg/orgology@lists.sr.ht?subject=\[PATCH\] hop: <COMMIT SUMMARY>][patch]] (please use =git format-patch=)
+- Send a [[mailto:~bzg/orgology@lists.sr.ht?subject=\[FR\] hop: <FEATURE REQUEST>][feature request]]
+- Share any [[mailto:~bzg/orgology@lists.sr.ht?subject=hop: <ANYTHING>][other question or idea]]
 
 * Support the Clojure(script) ecosystem
 
