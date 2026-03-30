@@ -68,6 +68,8 @@ Assuming [[https://github.com/babashka/bbin][bbin]] is installed:
 - Send a [[mailto:~bzg/orgology@lists.sr.ht?subject=\[FR\] hop: <FEATURE REQUEST>][feature request]]
 - Share any [[mailto:~bzg/orgology@lists.sr.ht?subject=hop: <ANYTHING>][other question or idea]]
 
+You can also [[mailto:bzg@bzg.fr][send me an email]] and support my work on [[https://liberapay.com/bzg/][liberapay]].
+
 * Support the Clojure(script) ecosystem
 
 If you like Clojure(script), please consider supporting maintainers by
