@@ -1,5 +1,7 @@
 #+title: Hop - Hush Org Parser
 
+[[https://intver.org/][https://img.shields.io/badge/versioning-intver.org-blue.svg?style=for-the-badge]]
+
 [[file:hop.png]]
 
 Hush Org Parser — render and export Org files to md/html/org/json/edn/yaml/ics.
@@ -69,6 +71,14 @@ Assuming [[https://github.com/babashka/bbin][bbin]] is installed:
 - Share any [[mailto:~bzg/orgology@lists.sr.ht][other question or idea]]
 
 You can also [[mailto:bzg@bzg.fr][send me an email]] and support my work on [[https://liberapay.com/bzg/][liberapay]].
+
+* Intentional Versioning
+
+This project uses [[https://intver.org][Intentional Versioning]], here are the three audiences:
+
+- =x= : end users who use hop
+- =y= : external packagers
+- =z= : contributors to the codebase
 
 * Support the Clojure(script) ecosystem
 
