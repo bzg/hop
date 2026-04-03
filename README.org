@@ -58,6 +58,16 @@ Assuming [[https://github.com/babashka/bbin][bbin]] is installed:
 
 : brew install babashka/brew/bbin
 
+* Development
+
+To run =hop= directly from the source without installing via =bbin=:
+
+: ~$ bb -m bzg.hop -f md notes.org
+
+This requires adding the =organ= dependency to =bb.edn=:
+
+: {:deps {org.clojars.bzg/organ {:mvn/version "1.0.0"}}}
+
 * Test
 
 : ~$ bb test:generate
