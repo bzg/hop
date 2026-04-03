@@ -414,7 +414,7 @@ li > p { margin-top: 0.5em; }
                 "\n<script>hljs.highlightAll();</script>"))
          "\n</body>\n</html>")))
 
-(defn- render-table [rows has-header fmt]
+(defn- render-table [rows has-header fmt & {:keys [indent] :or {indent ""}}]
   (if (empty? rows) ""
     (let [;; Find max number of columns across all rows
           max-cols (reduce max 0 (map count rows))
@@ -431,9 +431,9 @@ li > p { margin-top: 0.5em; }
                               rendered-rows))
           pad-cell (fn [cell width] (str cell (repeat-str (- width (count cell)) " ")))
           format-row (fn [row]
-                       (str "| " (str/join " | " (map-indexed #(pad-cell %2 (nth col-widths %1 min-table-cell-width)) row)) " |"))
+                       (str indent "| " (str/join " | " (map-indexed #(pad-cell %2 (nth col-widths %1 min-table-cell-width)) row)) " |"))
           separator (when (seq col-widths)
-                      (str "|-" (str/join (if (= fmt :org) "-+-" "-|-") (map #(repeat-str % "-") col-widths)) "-|"))]
+                      (str indent "|-" (str/join (if (= fmt :org) "-+-" "-|-") (map #(repeat-str % "-") col-widths)) "-|"))]
       (if (nil? col-widths)
         ""
         (if has-header
@@ -455,17 +455,21 @@ li > p { margin-top: 0.5em; }
 (defn- render-list-item [item index ordered level fmt]
   (let [indent (repeat-str (* level list-indent-width) " ")
         marker (if ordered (str (inc index) ". ") "- ")
+        has-block-child? (and (= fmt :md)
+                              (some #(#{:table :src-block :quote-block :block} (:type %))
+                                    (:children item)))
+        child-sep (if has-block-child? "\n\n" "\n")
         children-str (when (seq (:children item))
-                       (str/join "\n" (map #(render-node % fmt (inc level)) (:children item))))]
+                       (str/join child-sep (map #(render-node % fmt (inc level)) (:children item))))]
     (if (and (:term item) (= fmt :md))
       (str indent (render-inline (:term item) :md) "\n"
            indent ":   " (render-inline (or (:definition item) []) :md)
-           (when children-str (str "\n" children-str)))
+           (when children-str (str child-sep children-str)))
       (let [content (if (:term item)
                       (str (render-inline (:term item) fmt) " :: "
                            (render-inline (or (:definition item) []) fmt))
                       (render-inline (:content item) fmt))]
-        (str indent marker content (when children-str (str "\n" children-str)))))))
+        (str indent marker content (when children-str (str child-sep children-str)))))))
 
 (defn- render-children
   "Render a sequence of child nodes with smart spacing.
@@ -788,26 +792,30 @@ li > p { margin-top: 0.5em; }
         (str "<li>" (render-inline (:content node) :html) children-html "</li>")))
     (render-list-item node 0 false level fmt)))
 
-(defn- render-table-node [node fmt]
-  (if (= fmt :html)
-    (let [rows (:rows node)
-          has-header (:has-header node)
-          cell (fn [tag content] (str "<" tag ">" (render-inline content :html) "</" tag ">"))]
-      (if (empty? rows) ""
-        (str "<table>\n"
-             (when has-header
-               (str "  <thead>\n    <tr>\n      "
-                    (str/join "" (map #(cell "th" %) (first rows)))
-                    "\n    </tr>\n  </thead>\n"))
-             "  <tbody>\n"
-             (str/join "\n"
-                       (map (fn [row]
-                              (str "    <tr>\n      "
-                                   (str/join "" (map #(cell "td" %) row))
-                                   "\n    </tr>"))
-                            (if has-header (rest rows) rows)))
-             "\n  </tbody>\n</table>")))
-    (render-table (:rows node) (:has-header node) fmt)))
+(defn- render-table-node [node fmt & [level]]
+  (let [level (or level 0)]
+    (if (= fmt :html)
+      (let [rows (:rows node)
+            has-header (:has-header node)
+            cell (fn [tag content] (str "<" tag ">" (render-inline content :html) "</" tag ">"))]
+        (if (empty? rows) ""
+          (str "<table>\n"
+               (when has-header
+                 (str "  <thead>\n    <tr>\n      "
+                      (str/join "" (map #(cell "th" %) (first rows)))
+                      "\n    </tr>\n  </thead>\n"))
+               "  <tbody>\n"
+               (str/join "\n"
+                         (map (fn [row]
+                                (str "    <tr>\n      "
+                                     (str/join "" (map #(cell "td" %) row))
+                                     "\n    </tr>"))
+                              (if has-header (rest rows) rows)))
+               "\n  </tbody>\n</table>")))
+      (let [indent (if (and (= fmt :md) (pos? level))
+                     (repeat-str (* level list-indent-width) " ")
+                     "")]
+        (render-table (:rows node) (:has-header node) fmt :indent indent)))))
 
 (defn- render-src-block [node fmt]
   (case fmt
@@ -916,7 +924,7 @@ li > p { margin-top: 0.5em; }
      :paragraph      (render-paragraph node fmt)
      :list           (render-list-node node fmt level)
      :list-item      (render-list-item-node node fmt level)
-     :table          (render-table-node node fmt)
+     :table          (render-table-node node fmt level)
      :src-block      (render-src-block node fmt)
      :quote-block    (render-quote-block node fmt)
      :property-drawer (if (= fmt :org) (render-properties-org (:properties node)) "")
