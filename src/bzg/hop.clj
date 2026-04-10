@@ -34,11 +34,7 @@
 ;; to HTML, Markdown, or Org format strings.
 
 (defn- escape-html [text]
-  (-> (str text)
-      (str/replace "&" "&amp;")
-      (str/replace "<" "&lt;")
-      (str/replace ">" "&gt;")
-      (str/replace "\"" "&quot;")))
+  (str/escape (str text) {\& "&amp;" \< "&lt;" \> "&gt;" \" "&quot;"}))
 
 (defn- upper-name [k] (str/upper-case (name k)))
 
@@ -237,7 +233,10 @@
     (nil? nodes) ""
     (string? nodes) (case fmt :html (escape-html nodes) nodes)
     (empty? nodes) ""
-    :else (str/join (map #(render-inline-node % fmt) nodes))))
+    :else (let [sb (StringBuilder.)]
+            (doseq [node nodes]
+              (.append sb (render-inline-node node fmt)))
+            (.toString sb))))
 
 (defn- extract-single-image-node
   "If an inline node vector contains exactly one link node that is an image,
@@ -475,21 +474,19 @@ li > p { margin-top: 0.5em; }
   "Render a sequence of child nodes with smart spacing.
    Sections handle their own spacing via :blank-lines-before."
   [children fmt]
-  (let [entries (for [child children
-                      :let [r (render-node child fmt)]
-                      :when (not (str/blank? r))]
-                  {:type (:type child) :text r})]
-    (->> entries
-         (reduce (fn [acc {:keys [type text]}]
-                   (if (empty? acc)
-                     text
-                     (str acc
-                          (cond
-                            (= type :section) "\n"
-                            (= fmt :html)     "\n"
-                            :else              "\n\n")
-                          text)))
-                 ""))))
+  (let [sb (StringBuilder.)
+        first? (volatile! true)]
+    (doseq [child children
+            :let [r (render-node child fmt)]
+            :when (not (str/blank? r))]
+      (if @first?
+        (vreset! first? false)
+        (.append sb (cond
+                      (= (:type child) :section) "\n"
+                      (= fmt :html)              "\n"
+                      :else                      "\n\n")))
+      (.append sb r))
+    (.toString sb)))
 
 ;; #+OPTIONS parsing
 (defn- parse-options-string
@@ -524,7 +521,7 @@ li > p { margin-top: 0.5em; }
                     :section-number (:section-number child)
                     :id (or (:section-id child)
                             (get-in child [:properties :custom_id])
-                            (heading-to-slug (:title child)))}]
+                            (:slug child))}]
          (into (conj entries entry)
                (collect-toc-entries (:children child) max-depth)))
        entries))
@@ -580,7 +577,7 @@ li > p { margin-top: 0.5em; }
            (str/join "\n")))))
 
 (defn- render-document [node fmt level]
-  (let [options (parse-options-string (get-in node [:meta :options]))
+  (let [options (or (:parsed-options node) (parse-options-string (get-in node [:meta :options])))
         toc? (get options :toc)
         toc-depth (let [h (get options :h 6)
                         t (get options :toc)]
@@ -952,10 +949,11 @@ li > p { margin-top: 0.5em; }
                 (if (zero? n) base (str base "-" n))))
             (walk [node]
               (case (:type node)
-                :section (let [base (or (get-in node [:properties :custom_id])
-                                        (heading-to-slug (:title node)))]
+                :section (let [slug (heading-to-slug (:title node))
+                               base (or (get-in node [:properties :custom_id]) slug)]
                            (-> node
                                (assoc :section-id (unique-id base))
+                               (assoc :slug slug)
                                (update :children #(mapv walk %))))
                 (:document :quote-block) (update node :children #(mapv walk %))
                 :list (update node :items #(mapv walk %))
@@ -969,7 +967,7 @@ li > p { margin-top: 0.5em; }
    (e.g. '1', '1.1', '2.3.1') based on its level and position among siblings.
    Only applied when the document has num:t in #+OPTIONS (default: false)."
   [ast]
-  (let [options (get-export-options ast)
+  (let [options (or (:parsed-options ast) (get-export-options ast))
         num? (get options :num false)]
     (if-not num?
       ast
@@ -999,31 +997,33 @@ li > p { margin-top: 0.5em; }
 ;; ICS Export
 (defn- ics-fold-line
   "Fold a content line per RFC 5545 (max 75 octets per line)."
-  [line]
-  (if (<= (count (.getBytes line "UTF-8")) 75)
-    line
-    (loop [remaining line first? true parts []]
-      (if (empty? remaining)
-        (str/join "\r\n " parts)
-        (let [max-bytes (if first? 75 74) ;; continuation lines: space takes 1 byte
-              ;; Take chars one by one until we hit the byte limit
-              chunk (loop [i 1]
-                      (if (> i (count remaining))
-                        remaining
-                        (let [s (subs remaining 0 i)]
-                          (if (> (count (.getBytes s "UTF-8")) max-bytes)
-                            (subs remaining 0 (dec i))
-                            (recur (inc i))))))]
-          (recur (subs remaining (count chunk)) false (conj parts chunk)))))))
+  [^String line]
+  (let [bytes (.getBytes line "UTF-8")]
+    (if (<= (alength bytes) 75)
+      line
+      (let [sb (StringBuilder.)]
+        (loop [offset 0 first? true]
+          (let [max-bytes (if first? 75 74)
+                remaining (- (alength bytes) offset)]
+            (if (<= remaining 0)
+              (.toString sb)
+              (let [;; Find char boundary at or before max-bytes from offset
+                    end (min (+ offset max-bytes) (alength bytes))
+                    ;; Back up if we landed in the middle of a multi-byte UTF-8 char
+                    end (loop [e end]
+                          (if (or (<= e offset)
+                                  (< (bit-and (aget bytes e) 0xC0) 0x80))
+                            e
+                            (recur (dec e))))
+                    chunk (String. bytes offset (- end offset) "UTF-8")]
+                (when-not first? (.append sb "\r\n "))
+                (.append sb chunk)
+                (recur end false)))))))))
 
 (defn- ics-escape
   "Escape text for ICS property values per RFC 5545."
   [s]
-  (-> s
-      (str/replace "\\" "\\\\")
-      (str/replace "," "\\,")
-      (str/replace ";" "\\;")
-      (str/replace "\n" "\\n")))
+  (str/escape s {\\ "\\\\" \, "\\," \; "\\;" \newline "\\n"}))
 
 (defn- iso-to-ics-datetime
   "Convert ISO timestamp (2025-01-15T10:30) to ICS datetime (20250115T103000).
@@ -1160,7 +1160,12 @@ li > p { margin-top: 0.5em; }
                     ["END:VCALENDAR"]))
          "\r\n")))
 
-(defn- prepare-ast [ast] (-> ast number-sections assign-section-ids))
+(defn- prepare-ast [ast]
+  (let [options (parse-options-string (get-in ast [:meta :options]))]
+    (-> ast
+        (assoc :parsed-options options)
+        number-sections
+        assign-section-ids)))
 (defn render-ast-as-markdown [ast] (render-node (prepare-ast ast) :md))
 (defn render-ast-as-html [ast] (render-node (prepare-ast ast) :html))
 (defn render-ast-as-org [ast] (render-node (prepare-ast ast) :org))
@@ -1174,10 +1179,17 @@ li > p { margin-top: 0.5em; }
 (defn- count-words
   "Count words in a string or vector of inline nodes."
   [s]
-  (let [text (cond (string? s) s
-                   (sequential? s) (inline-text s)
-                   :else nil)]
-    (if (non-blank? text) (count (re-seq #"\S+" text)) 0)))
+  (let [^String text (cond (string? s) s
+                           (sequential? s) (inline-text s)
+                           :else nil)]
+    (if (non-blank? text)
+      (let [len (.length text)]
+        (loop [i 0 in-word false n 0]
+          (if (>= i len)
+            (if in-word (inc n) n)
+            (let [ws (Character/isWhitespace (.charAt text i))]
+              (recur (inc i) (not ws) (if (and in-word ws) (inc n) n))))))
+      0)))
 
 (defn- count-images
   "Count image links in a vector of inline nodes (or string for backward compat)."
