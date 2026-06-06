@@ -3,13 +3,7 @@
  {:title "Test Document",
   :author "Test Author",
   :date "2025-01-15",
-  :options "toc:t num:t H:3",
-  :_order [:title :author :date :options],
-  :_raw
-  ["#+TITLE: Test Document"
-   "#+AUTHOR: Test Author"
-   "#+DATE: 2025-01-15"
-   "#+OPTIONS: toc:t num:t H:3"]},
+  :options "toc:t num:t H:3"},
  :children
  [{:content
    "Some top-level paragraph with **bold**, *italic*, _underline_, ~~strikethrough~~, `code`, and `verbatim` markup.",

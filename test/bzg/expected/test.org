@@ -1,8 +1,3 @@
-#+TITLE: Test Document
-#+AUTHOR: Test Author
-#+DATE: 2025-01-15
-#+OPTIONS: toc:t num:t H:3
-
 - 1 First Section
   - 1.1 Nested Section
     - 1.1.1 Deep Section

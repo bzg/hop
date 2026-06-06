@@ -1044,24 +1044,18 @@ li > p { margin-top: 0.5em; }
       {:dtstart (to-ics iso)})))
 
 (defn- collect-ics-items
-  "Walk the AST and collect sections that have :scheduled or :deadline planning."
-  [node]
-  (letfn [(walk [n path]
-            (let [is-section (= (:type n) :section)
-                  title-text (when is-section (or (inline-text (:title n)) ""))
-                  new-path (if is-section (conj path title-text) path)
-                  self (when is-section
-                         (let [{:keys [planning todo]} n
-                               title title-text]
-                           (cond-> []
-                             (:scheduled planning)
-                             (conj {:ics-type :vevent :title title :path new-path :todo todo
-                                    :timestamp (:scheduled planning) :repeater (:scheduled-repeat planning)})
-                             (and (:deadline planning) todo)
-                             (conj {:ics-type :vtodo :title title :path new-path :todo todo
-                                    :timestamp (:deadline planning) :repeater (:deadline-repeat planning)}))))]
-              (into (vec self) (mapcat #(walk % new-path) (:children n)))))]
-    (walk node [])))
+  "Collect SCHEDULED -> VEVENT and DEADLINE+TODO -> VTODO items, using organ's
+   active-timestamps accessor (inline timestamps are not exported)."
+  [ast]
+  (->> (organ/active-timestamps ast)
+       (keep (fn [{:keys [origin value repeater title todo]}]
+               (case origin
+                 :scheduled {:ics-type :vevent :title title :todo todo
+                             :timestamp value :repeater repeater}
+                 :deadline  (when todo
+                              {:ics-type :vtodo :title title :todo todo
+                               :timestamp value :repeater repeater})
+                 nil)))))
 
 (defn- uid-for-item
   "Generate a deterministic UID from item properties."
@@ -1072,24 +1066,16 @@ li > p { margin-top: 0.5em; }
         hex (str/join (map #(format "%02x" %) bytes))]
     (str (subs hex 0 16) "@hop")))
 
+(def ^:private ics-rrule-freq
+  {:hour "HOURLY" :day "DAILY" :week "WEEKLY" :month "MONTHLY" :year "YEARLY"})
+
 (defn- org-repeater-to-rrule
-  "Convert Org repeater cookie to ICS RRULE string.
-   +1d  -> FREQ=DAILY;INTERVAL=1
-   +2w  -> FREQ=WEEKLY;INTERVAL=2
-   +1m  -> FREQ=MONTHLY;INTERVAL=1
-   +1y  -> FREQ=YEARLY;INTERVAL=1
-   .+1d -> FREQ=DAILY;INTERVAL=1  (shift type ignored in ICS)
-   ++1w -> FREQ=WEEKLY;INTERVAL=1 (catch-up type ignored in ICS)"
-  [repeater]
-  (when repeater
-    (when-let [[_ interval unit] (re-find #"(\d+)([hdwmy])$" repeater)]
-      (let [freq (case unit
-                   "h" "HOURLY"
-                   "d" "DAILY"
-                   "w" "WEEKLY"
-                   "m" "MONTHLY"
-                   "y" "YEARLY")]
-        (str "RRULE:FREQ=" freq ";INTERVAL=" interval)))))
+  "Convert a parsed Org repeater ({:n :unit :kind}, as produced by
+   organ/active-timestamps) to an ICS RRULE string. The shift kind (+/++/.+)
+   has no RRULE equivalent and is ignored."
+  [{:keys [n unit]}]
+  (when-let [freq (and n unit (ics-rrule-freq unit))]
+    (str "RRULE:FREQ=" freq ";INTERVAL=" n)))
 
 (defn- ics-next-day
   "Given an ICS VALUE=DATE string like '20250115', return the next day '20250116'.
