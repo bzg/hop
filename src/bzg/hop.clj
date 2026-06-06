@@ -125,13 +125,13 @@
   [src default-alt affiliated]
   (let [html-attrs (get-in affiliated [:attr :html] {})
         ;; Use alt from #+attr_html if provided, otherwise default
-        alt (or (:alt html-attrs) default-alt)
+        alt        (or (:alt html-attrs) default-alt)
         ;; Build the img tag with all HTML attributes
-        img-attrs (merge {:src src :alt alt}
+        img-attrs  (merge {:src src :alt alt}
                          (dissoc html-attrs :alt)) ; alt already handled
-        img-tag (str "<img" (build-img-attrs img-attrs) ">")
+        img-tag    (str "<img" (build-img-attrs img-attrs) ">")
         ;; Wrap in figure with figcaption if caption is present
-        caption (:caption affiliated)]
+        caption    (:caption affiliated)]
     (if caption
       (str "<figure>" img-tag "<figcaption>"
            (escape-html caption) "</figcaption></figure>")
@@ -164,14 +164,14 @@
   [{:keys [link-type target url]}]
   (prepend-base-url
    (case link-type
-     :file          (str/replace target #"\.org$" ".html")
+     :file        (str/replace target #"\.org$" ".html")
      (:id
-      :custom-id)  (str "#" target)
-     :heading       (str "#" (heading-to-slug target))
-     :mailto        (str "mailto:" target)
+      :custom-id) (str "#" target)
+     :heading     (str "#" (heading-to-slug target))
+     :mailto      (str "mailto:" target)
      url)))
 
-;; Inline Node Rendering — forward declarations
+;; Inline Node Rendering -- forward declarations
 (declare render-inline render-link-node)
 
 (defn- render-inline-node
@@ -230,11 +230,11 @@
    If given a string (fallback), escapes for HTML or returns as-is."
   [nodes fmt]
   (cond
-    (nil? nodes) ""
+    (nil? nodes)    ""
     (string? nodes) (case fmt :html (escape-html nodes) nodes)
-    (empty? nodes) ""
-    :else (let [sb (StringBuilder.)]
-            (doseq [node nodes]
+    (empty? nodes)  ""
+    :else           (let [sb (StringBuilder.)]
+                      (doseq [node nodes]
               (.append sb (render-inline-node node fmt)))
             (.toString sb))))
 
@@ -245,7 +245,7 @@
   (when (and (sequential? nodes)
              (= 1 (count nodes))
              (= :link (:type (first nodes))))
-    (let [node (first nodes)
+    (let [node       (first nodes)
           actual-url (if (#{:http :https} (:link-type node))
                        (:url node) (:target node))]
       (when (image-url? actual-url) node))))
@@ -254,15 +254,15 @@
   "Render a :link inline node. Optionally accepts affiliated keywords for
    enhanced image rendering (e.g., paragraphs with #+CAPTION)."
   [node fmt affiliated]
-  (let [link-type   (:link-type node)
-        target      (:target node)
-        url         (:url node)
-        children    (:children node)
-        has-desc    (seq children)
-        desc-text   (when has-desc (inline-text children))
-        actual-url  (if (#{:http :https} link-type) url (or target url))
+  (let [link-type     (:link-type node)
+        target        (:target node)
+        url           (:url node)
+        children      (:children node)
+        has-desc      (seq children)
+        desc-text     (when has-desc (inline-text children))
+        actual-url    (if (#{:http :https} link-type) url (or target url))
         is-local-file (= link-type :file)
-        is-remote   (#{:http :https} link-type)
+        is-remote     (#{:http :https} link-type)
         url-is-image  (image-url? actual-url)
         desc-is-image (and desc-text (image-url? desc-text))]
     (cond
@@ -339,24 +339,24 @@
 
 ;; AST Content Rendering
 (defn- render-content-in-node [node render-format]
-  (let [fmt #(render-inline % render-format)
+  (let [fmt              #(render-inline % render-format)
         render-children* #(mapv (fn [c] (render-content-in-node c render-format)) %)
-        result (case (:type node)
-                 :document (-> node (update :title #(when % (fmt %))) (update :children render-children*))
-                 :section (-> node (update :title #(when % (fmt %))) (update :children render-children*))
-                 :paragraph (update node :content fmt)
-                 :list (update node :items #(mapv (fn [i] (render-content-in-node i render-format)) %))
-                 :list-item (let [node (update node :children render-children*)]
-                              (if (:term node)
-                                (-> node (update :term fmt) (update :definition fmt))
-                                (update node :content fmt)))
-                 :table (update node :rows #(mapv (fn [row] (mapv fmt row)) %))
-                 :quote-block (update node :children render-children*)
-                 :footnote-def (update node :content fmt)
-                 :block (if (#{:src :example :export} (:block-type node)) node
-                          (update node :content
-                                  #(render-inline (parse-inline %) render-format)))
-                 node)]
+        result           (case (:type node)
+                           :document     (-> node (update :title #(when % (fmt %))) (update :children render-children*))
+                           :section      (-> node (update :title #(when % (fmt %))) (update :children render-children*))
+                           :paragraph    (update node :content fmt)
+                           :list         (update node :items #(mapv (fn [i] (render-content-in-node i render-format)) %))
+                           :list-item    (let [node (update node :children render-children*)]
+                                        (if (:term node)
+                                          (-> node (update :term fmt) (update :definition fmt))
+                                          (update node :content fmt)))
+                           :table        (update node :rows #(mapv (fn [row] (mapv fmt row)) %))
+                           :quote-block  (update node :children render-children*)
+                           :footnote-def (update node :content fmt)
+                           :block        (if (#{:src :example :export} (:block-type node)) node
+                                      (update node :content
+                                              #(render-inline (parse-inline %) render-format)))
+                           node)]
     (remove-empty-vals result)))
 
 ;; Unified Renderer
@@ -415,30 +415,30 @@ li > p { margin-top: 0.5em; }
 
 (defn- render-table [rows has-header fmt & {:keys [indent] :or {indent ""}}]
   (if (empty? rows) ""
-    (let [;; Find max number of columns across all rows
-          max-cols (reduce max 0 (map count rows))
-          ;; Pad helper for ragged rows
-          pad-row (fn [row] (let [missing (- max-cols (count row))]
-                              (if (pos? missing)
-                                (into (vec row) (repeat missing []))
-                                (vec row))))
-          ;; Render all cells to strings, then compute widths from rendered text
-          rendered-rows (mapv (fn [row] (mapv #(render-inline % fmt) (pad-row row))) rows)
-          col-widths (when (and (seq rendered-rows) (pos? max-cols))
-                       (apply mapv (fn [& cells]
-                                     (apply max min-table-cell-width (map count cells)))
-                              rendered-rows))
-          pad-cell (fn [cell width] (str cell (repeat-str (- width (count cell)) " ")))
-          format-row (fn [row]
-                       (str indent "| " (str/join " | " (map-indexed #(pad-cell %2 (nth col-widths %1 min-table-cell-width)) row)) " |"))
-          separator (when (seq col-widths)
-                      (str indent "|-" (str/join (if (= fmt :org) "-+-" "-|-") (map #(repeat-str % "-") col-widths)) "-|"))]
-      (if (nil? col-widths)
-        ""
-        (if has-header
-          (str (format-row (first rendered-rows)) "\n" separator "\n"
-               (str/join "\n" (map format-row (rest rendered-rows))))
-          (str/join "\n" (map format-row rendered-rows)))))))
+      (let [;; Find max number of columns across all rows
+            max-cols      (reduce max 0 (map count rows))
+            ;; Pad helper for ragged rows
+            pad-row       (fn [row] (let [missing (- max-cols (count row))]
+                                (if (pos? missing)
+                                  (into (vec row) (repeat missing []))
+                                  (vec row))))
+            ;; Render all cells to strings, then compute widths from rendered text
+            rendered-rows (mapv (fn [row] (mapv #(render-inline % fmt) (pad-row row))) rows)
+            col-widths    (when (and (seq rendered-rows) (pos? max-cols))
+                         (apply mapv (fn [& cells]
+                                       (apply max min-table-cell-width (map count cells)))
+                                rendered-rows))
+            pad-cell      (fn [cell width] (str cell (repeat-str (- width (count cell)) " ")))
+            format-row    (fn [row]
+                         (str indent "| " (str/join " | " (map-indexed #(pad-cell %2 (nth col-widths %1 min-table-cell-width)) row)) " |"))
+            separator     (when (seq col-widths)
+                        (str indent "|-" (str/join (if (= fmt :org) "-+-" "-|-") (map #(repeat-str % "-") col-widths)) "-|"))]
+        (if (nil? col-widths)
+          ""
+          (if has-header
+            (str (format-row (first rendered-rows)) "\n" separator "\n"
+                 (str/join "\n" (map format-row (rest rendered-rows))))
+            (str/join "\n" (map format-row rendered-rows)))))))
 
 (declare ^:private render-node)
 
@@ -452,13 +452,13 @@ li > p { margin-top: 0.5em; }
          (format ":PROPERTIES:\n%s\n:END:"))))
 
 (defn- render-list-item [item index ordered level fmt]
-  (let [indent (repeat-str (* level list-indent-width) " ")
-        marker (if ordered (str (inc index) ". ") "- ")
+  (let [indent           (repeat-str (* level list-indent-width) " ")
+        marker           (if ordered (str (inc index) ". ") "- ")
         has-block-child? (and (= fmt :md)
                               (some #(#{:table :src-block :quote-block :block} (:type %))
                                     (:children item)))
-        child-sep (if has-block-child? "\n\n" "\n")
-        children-str (when (seq (:children item))
+        child-sep        (if has-block-child? "\n\n" "\n")
+        children-str     (when (seq (:children item))
                        (str/join child-sep (map #(render-node % fmt (inc level)) (:children item))))]
     (if (and (:term item) (= fmt :md))
       (str indent (render-inline (:term item) :md) "\n"
@@ -474,10 +474,10 @@ li > p { margin-top: 0.5em; }
   "Render a sequence of child nodes with smart spacing.
    Sections handle their own spacing via :blank-lines-before."
   [children fmt]
-  (let [sb (StringBuilder.)
+  (let [sb     (StringBuilder.)
         first? (volatile! true)]
     (doseq [child children
-            :let [r (render-node child fmt)]
+            :let  [r (render-node child fmt)]
             :when (not (str/blank? r))]
       (if @first?
         (vreset! first? false)
@@ -499,7 +499,7 @@ li > p { margin-top: 0.5em; }
           (for [[_ k v] (re-seq #"(\S+):(\S+)" s)]
             [(keyword (str/lower-case k))
              (case v
-               "t" true
+               "t"   true
                "nil" false
                (try (Integer/parseInt v) (catch Exception _ v)))]))))
 
@@ -516,10 +516,10 @@ li > p { margin-top: 0.5em; }
    (fn [entries child]
      (if (and (= (:type child) :section)
               (<= (:level child) max-depth))
-       (let [entry {:level (:level child)
-                    :title (:title child)
+       (let [entry {:level          (:level child)
+                    :title          (:title child)
                     :section-number (:section-number child)
-                    :id (or (:section-id child)
+                    :id             (or (:section-id child)
                             (get-in child [:properties :custom_id])
                             (:slug child))}]
          (into (conj entries entry)
@@ -534,16 +534,16 @@ li > p { margin-top: 0.5em; }
   (when (seq entries)
     (case fmt
       :html (let [sb (StringBuilder.)
-                  _ (.append sb "<nav id=\"table-of-contents\">\n<h2>Table of Contents</h2>\n")
-                  _ (loop [[entry & more] entries
-                           prev-level 0]
+                  _  (.append sb "<nav id=\"table-of-contents\">\n<h2>Table of Contents</h2>\n")
+                  _  (loop [[entry & more] entries
+                            prev-level     0]
                       (if (nil? entry)
                         ;; Close all remaining open lists
                         (dotimes [_ prev-level]
                           (.append sb "</li>\n</ul>\n"))
                         (let [{:keys [level title section-number id]} entry
-                              num-str (if section-number (str section-number " ") "")
-                              link (str "<a href=\"#" (escape-html id) "\">" num-str (render-inline title :html) "</a>")]
+                              num-str                                 (if section-number (str section-number " ") "")
+                              link                                    (str "<a href=\"#" (escape-html id) "\">" num-str (render-inline title :html) "</a>")]
                           (cond
                             ;; Deeper level: open new sublist(s)
                             (> level prev-level)
@@ -563,37 +563,37 @@ li > p { margin-top: 0.5em; }
                                 (.append sb "</li>\n")
                                 (.append sb (str "<li>" link))
                                 (recur more level))))))
-                  _ (.append sb "</nav>")]
+                  _  (.append sb "</nav>")]
               (.toString sb))
       ;; org and markdown
       (->> entries
            (map (fn [{:keys [level title section-number]}]
-                  (let [indent (repeat-str (* 2 (dec level)) " ")
+                  (let [indent  (repeat-str (* 2 (dec level)) " ")
                         num-str (when section-number (str section-number " "))
-                        label (if (= fmt :org)
+                        label   (if (= fmt :org)
                                 (str num-str (render-inline title :org))
                                 (str "[" num-str (render-inline title :md) "](#" (heading-to-slug title) ")"))]
                     (str indent "- " label))))
            (str/join "\n")))))
 
 (defn- render-document [node fmt level]
-  (let [options (or (:parsed-options node) (parse-options-string (get-in node [:meta :options])))
-        toc? (get options :toc)
-        toc-depth (let [h (get options :h 6)
-                        t (get options :toc)]
+  (let [options     (or (:parsed-options node) (parse-options-string (get-in node [:meta :options])))
+        toc?        (get options :toc)
+        toc-depth   (let [h (get options :h 6)
+                          t (get options :toc)]
                     ;; toc can be true (use H:) or an integer depth
                     (if (integer? t) t (if (integer? h) h 6)))
         toc-entries (when toc? (collect-toc-entries (:children node) toc-depth))
-        toc-str (when toc? (render-toc toc-entries fmt))]
+        toc-str     (when toc? (render-toc toc-entries fmt))]
     (case fmt
-      :html (let [footnotes (filter #(= (:type %) :footnote-def) (:children node))
-                  title-html (when-let [t (:title node)]
+      :html (let [footnotes      (filter #(= (:type %) :footnote-def) (:children node))
+                  title-html     (when-let [t (:title node)]
                                (str "<header>\n<h1 class=\"document-title\">" (render-inline t :html) "</h1>\n"
                                     (when-let [st (get-in node [:meta :subtitle])]
                                       (str "<p class=\"subtitle\">" (render-inline (parse-inline st) :html) "</p>\n"))
                                     "</header>\n"))
-                  toc-html (when toc-str (str toc-str "\n"))
-                  main-content (str title-html toc-html
+                  toc-html       (when toc-str (str toc-str "\n"))
+                  main-content   (str title-html toc-html
                                     (->> (:children node)
                                          (remove #(= (:type %) :footnote-def))
                                          (map #(render-node % fmt level))
@@ -604,19 +604,19 @@ li > p { margin-top: 0.5em; }
                                         "\n</aside>"))]
               (html-template (or (inline-text (:title node)) "Untitled Document")
                              (str main-content (when footnotes-html (str "\n" footnotes-html)))))
-      :org (let [meta (:meta node)
-                 meta-str (cond
-                            (seq (:_raw meta)) (str/join "\n" (:_raw meta))
-                            (seq (:_order meta))
-                            (str/join "\n"
-                                      (keep (fn [k]
-                                              (let [v (get meta k)]
-                                                (when (non-blank? (str v))
-                                                  (if (vector? v)
-                                                    (str/join "\n" (map #(str "#+" (upper-name k) ": " %) v))
-                                                    (str "#+" (upper-name k) ": " v)))))
-                                            (:_order meta)))
-                            :else nil)]
+      :org  (let [meta     (:meta node)
+                  meta-str (cond
+                             (seq (:_raw meta)) (str/join "\n" (:_raw meta))
+                             (seq (:_order meta))
+                             (str/join "\n"
+                                       (keep (fn [k]
+                                               (let [v (get meta k)]
+                                                 (when (non-blank? (str v))
+                                                   (if (vector? v)
+                                                     (str/join "\n" (map #(str "#+" (upper-name k) ": " %) v))
+                                                     (str "#+" (upper-name k) ": " v)))))
+                                             (:_order meta)))
+                             :else              nil)]
              (str (when (seq meta-str) (str meta-str "\n\n"))
                   (when toc-str (str toc-str "\n\n"))
                   (render-children (:children node) fmt)))
@@ -646,30 +646,30 @@ li > p { margin-top: 0.5em; }
   [planning fmt]
   (when (seq planning)
     (let [repeaters (planning-repeaters planning)
-          items (planning-items planning)]
+          items     (planning-items planning)]
       (when (seq items)
         (case fmt
           :html (str "<div class=\"planning\">"
                      (str/join " "
                                (map (fn [[kw iso]]
-                                      (let [rep (get repeaters kw)
+                                      (let [rep      (get repeaters kw)
                                             datetime (first (str/split iso #"/"))
-                                            display (cond-> (str/replace iso "/" "–")
-                                                      rep (str " " rep))]
+                                            display  (cond-> (str/replace iso "/" "–")
+                                                       rep (str " " rep))]
                                         (str "<span class=\"planning-keyword\">"
                                              (str/upper-case (name kw))
                                              ":</span> <time datetime=\"" datetime "\">" display "</time>")))
                                     items))
                      "</div>")
-          :org (str/join " "
+          :org  (str/join " "
                          (map (fn [[kw iso]]
-                                (let [rep (get repeaters kw)
+                                (let [rep     (get repeaters kw)
                                       rep-str (if rep (str " " rep) "")
-                                      ts (if (str/includes? iso "/")
-                                           (let [[start end] (str/split iso #"/")]
+                                      ts      (if (str/includes? iso "/")
+                                                (let [[start end] (str/split iso #"/")]
                                              (if (and (str/includes? start "T") (str/includes? end "T"))
                                                (let [[d t1] (str/split start #"T")
-                                                     t2 (second (str/split end #"T"))]
+                                                     t2     (second (str/split end #"T"))]
                                                  (str "<" d " " t1 "-" t2 rep-str ">"))
                                                (str "<" start rep-str ">--<" end rep-str ">")))
                                            (if (str/includes? iso "T")
@@ -681,7 +681,7 @@ li > p { margin-top: 0.5em; }
           ;; markdown
           (str/join " "
                     (map (fn [[kw iso]]
-                           (let [rep (get repeaters kw)
+                           (let [rep     (get repeaters kw)
                                  display (if rep (str iso " " rep) iso)]
                              (str "**" (str/upper-case (name kw)) ":** " display)))
                          items)))))))
@@ -689,34 +689,34 @@ li > p { margin-top: 0.5em; }
 (defn- render-section [node fmt]
   (let [planning-str (render-planning (:planning node) fmt)]
     (case fmt
-      :html (let [lvl (min (:level node) max-heading-level)
-                  tag (str "h" lvl)
-                  section-id (or (:section-id node)
+      :html (let [lvl           (min (:level node) max-heading-level)
+                  tag           (str "h" lvl)
+                  section-id    (or (:section-id node)
                                  (get-in node [:properties :custom_id])
                                  (heading-to-slug (:title node)))
-                  sec-num-html (when-let [sn (:section-number node)]
+                  sec-num-html  (when-let [sn (:section-number node)]
                                  (str "<span class=\"section-number\">" sn "</span> "))
-                  todo-html (when (:todo node)
+                  todo-html     (when (:todo node)
                               (str "<span class=\"todo " (str/lower-case (name (:todo node))) "\">"
                                    (name (:todo node)) "</span> "))
                   priority-html (when (:priority node)
                                   (str "<span class=\"priority\">[#" (:priority node) "]</span> "))
-                  tags-html (when (seq (:tags node))
+                  tags-html     (when (seq (:tags node))
                               (str " <span class=\"tags\">:" (str/join ":" (:tags node)) ":</span>"))]
               (str "<section id=\"" (escape-html section-id) "\">\n<" tag ">"
                    sec-num-html todo-html priority-html (render-inline (:title node) :html) tags-html
                    "</" tag ">\n"
                    (when planning-str (str planning-str "\n"))
                    (render-children (:children node) fmt) "\n</section>"))
-      :org (let [blanks-before (repeat-str (or (:blank-lines-before node) 0) "\n")
-                 blanks-after-title (repeat-str (or (:blank-lines-after-title node) 0) "\n")
-                 stars (repeat-str (:level node) "*")
-                 todo-str (when (:todo node) (str (name (:todo node)) " "))
-                 priority-str (when (:priority node) (str "[#" (:priority node) "] "))
-                 sec-num-str (when-let [sn (:section-number node)] (str sn " "))
-                 tags-str (when (seq (:tags node)) (str " :" (str/join ":" (:tags node)) ":"))
-                 props-str (render-properties-org (:properties node))
-                 children-str (render-children (:children node) fmt)]
+      :org  (let [blanks-before      (repeat-str (or (:blank-lines-before node) 0) "\n")
+                  blanks-after-title (repeat-str (or (:blank-lines-after-title node) 0) "\n")
+                  stars              (repeat-str (:level node) "*")
+                  todo-str           (when (:todo node) (str (name (:todo node)) " "))
+                  priority-str       (when (:priority node) (str "[#" (:priority node) "] "))
+                  sec-num-str        (when-let [sn (:section-number node)] (str sn " "))
+                  tags-str           (when (seq (:tags node)) (str " :" (str/join ":" (:tags node)) ":"))
+                  props-str          (render-properties-org (:properties node))
+                  children-str       (render-children (:children node) fmt)]
              (str blanks-before
                   stars " " todo-str priority-str sec-num-str (render-inline (:title node) :org) tags-str
                   (when planning-str (str "\n" planning-str))
@@ -724,13 +724,13 @@ li > p { margin-top: 0.5em; }
                   blanks-after-title
                   (when (seq children-str) (str "\n" children-str))))
       ;; default: markdown
-      (let [blanks-before (repeat-str (or (:blank-lines-before node) 0) "\n")
+      (let [blanks-before      (repeat-str (or (:blank-lines-before node) 0) "\n")
             blanks-after-title (repeat-str (or (:blank-lines-after-title node) 0) "\n")
-            todo-str (when (:todo node) (str "**" (name (:todo node)) "** "))
-            priority-str (when (:priority node) (str "[#" (:priority node) "] "))
-            sec-num-str (when-let [sn (:section-number node)] (str sn " "))
-            tags-str (when (seq (:tags node)) (str " `:" (str/join ":" (:tags node)) ":`"))
-            heading (str (repeat-str (min (:level node) max-heading-level) "#") " "
+            todo-str           (when (:todo node) (str "**" (name (:todo node)) "** "))
+            priority-str       (when (:priority node) (str "[#" (:priority node) "] "))
+            sec-num-str        (when-let [sn (:section-number node)] (str sn " "))
+            tags-str           (when (seq (:tags node)) (str " `:" (str/join ":" (:tags node)) ":`"))
+            heading            (str (repeat-str (min (:level node) max-heading-level) "#") " "
                          todo-str priority-str sec-num-str
                          (render-inline (:title node) :md)
                          tags-str)]
@@ -744,22 +744,22 @@ li > p { margin-top: 0.5em; }
       :html (if-let [img-node (and (:affiliated node) (extract-single-image-node content))]
               (render-link-node img-node :html (:affiliated node))
               (str "<p>" (render-inline content :html) "</p>"))
-      :org (let [affiliated (:affiliated node)
-                 content-str (render-inline content :org)
-                 attr-lines (when affiliated
-                              (str/join "\n"
-                                        (concat
-                                         (when-let [caption (:caption affiliated)]
-                                           [(str "#+caption: " caption)])
-                                         (when-let [aff-name (:name affiliated)]
-                                           [(str "#+name: " aff-name)])
-                                         (for [[attr-type attrs] (:attr affiliated)
-                                               :when (seq attrs)]
-                                           (str "#+attr_" (name attr-type) ": "
-                                                (str/join " " (for [[k v] attrs]
-                                                                (if (str/includes? v " ")
-                                                                  (str ":" (name k) " \"" v "\"")
-                                                                  (str ":" (name k) " " v)))))))))]
+      :org  (let [affiliated  (:affiliated node)
+                  content-str (render-inline content :org)
+                  attr-lines  (when affiliated
+                               (str/join "\n"
+                                         (concat
+                                          (when-let [caption (:caption affiliated)]
+                                            [(str "#+caption: " caption)])
+                                          (when-let [aff-name (:name affiliated)]
+                                            [(str "#+name: " aff-name)])
+                                          (for [[attr-type attrs] (:attr affiliated)
+                                                :when             (seq attrs)]
+                                            (str "#+attr_" (name attr-type) ": "
+                                                 (str/join " " (for [[k v] attrs]
+                                                                 (if (str/includes? v " ")
+                                                                   (str ":" (name k) " \"" v "\"")
+                                                                   (str ":" (name k) " " v)))))))))]
              (if (seq attr-lines)
                (str attr-lines "\n" content-str)
                content-str))
@@ -767,9 +767,9 @@ li > p { margin-top: 0.5em; }
 
 (defn- render-list-node [node fmt level]
   (case fmt
-    :html (let [tag (cond (:description node) "dl"
-                          (:ordered node) "ol"
-                          :else "ul")
+    :html (let [tag        (cond (:description node) "dl"
+                                 (:ordered node)     "ol"
+                                 :else               "ul")
                 items-html (->> (:items node)
                                 (map #(render-node % fmt))
                                 (str/join "\n"))]
@@ -792,23 +792,23 @@ li > p { margin-top: 0.5em; }
 (defn- render-table-node [node fmt & [level]]
   (let [level (or level 0)]
     (if (= fmt :html)
-      (let [rows (:rows node)
+      (let [rows       (:rows node)
             has-header (:has-header node)
-            cell (fn [tag content] (str "<" tag ">" (render-inline content :html) "</" tag ">"))]
+            cell       (fn [tag content] (str "<" tag ">" (render-inline content :html) "</" tag ">"))]
         (if (empty? rows) ""
-          (str "<table>\n"
-               (when has-header
-                 (str "  <thead>\n    <tr>\n      "
-                      (str/join "" (map #(cell "th" %) (first rows)))
-                      "\n    </tr>\n  </thead>\n"))
-               "  <tbody>\n"
-               (str/join "\n"
-                         (map (fn [row]
-                                (str "    <tr>\n      "
-                                     (str/join "" (map #(cell "td" %) row))
-                                     "\n    </tr>"))
-                              (if has-header (rest rows) rows)))
-               "\n  </tbody>\n</table>")))
+            (str "<table>\n"
+                 (when has-header
+                   (str "  <thead>\n    <tr>\n      "
+                        (str/join "" (map #(cell "th" %) (first rows)))
+                        "\n    </tr>\n  </thead>\n"))
+                 "  <tbody>\n"
+                 (str/join "\n"
+                           (map (fn [row]
+                                  (str "    <tr>\n      "
+                                       (str/join "" (map #(cell "td" %) row))
+                                       "\n    </tr>"))
+                                (if has-header (rest rows) rows)))
+                 "\n  </tbody>\n</table>")))
       (let [indent (if (and (= fmt :md) (pos? level))
                      (repeat-str (* level list-indent-width) " ")
                      "")]
@@ -820,9 +820,9 @@ li > p { margin-top: 0.5em; }
                (when (non-blank? (:language node))
                  (str " class=\"language-" (escape-html (:language node)) "\""))
                ">" (escape-html (:content node)) "</code></pre>")
-    :org (let [lang (:language node)
-               args (:args node)
-               escaped-content (escape-block-content (:content node))]
+    :org  (let [lang            (:language node)
+                args            (:args node)
+                escaped-content (escape-block-content (:content node))]
            (str "#+BEGIN_SRC"
                 (when (non-blank? lang) (str " " lang))
                 (when (non-blank? args) (str " " args))
@@ -834,7 +834,7 @@ li > p { margin-top: 0.5em; }
     :html (str "<blockquote>\n"
                (str/join "\n" (map #(render-node % fmt) (:children node)))
                "\n</blockquote>")
-    :org (str "#+BEGIN_QUOTE\n"
+    :org  (str "#+BEGIN_QUOTE\n"
               (escape-block-content
                (str/join "\n" (map #(render-node % :org) (:children node))))
               "\n#+END_QUOTE")
@@ -847,13 +847,13 @@ li > p { margin-top: 0.5em; }
 (defn- render-comment-node [node fmt]
   (case fmt
     :html (str "<!-- " (escape-html (:content node)) " -->")
-    :org (prefix-lines "# " (:content node))
+    :org  (prefix-lines "# " (:content node))
     (str "<!-- " (escape-html (:content node)) " -->")))
 
 (defn- render-fixed-width [node fmt]
   (case fmt
     :html (str "<pre>" (escape-html (:content node)) "</pre>")
-    :org (prefix-lines ": " (:content node))
+    :org  (prefix-lines ": " (:content node))
     (str "```\n" (:content node) "\n```")))
 
 (defn- render-footnote-def-node [node fmt]
@@ -862,49 +862,49 @@ li > p { margin-top: 0.5em; }
             (str "<div class=\"footnote\" id=\"fn-" label "\">"
                  "<a href=\"#fnref-" label "\" class=\"footnote-backref\"><sup>" label "</sup></a> "
                  (render-inline (:content node) :html) "</div>"))
-    :org (str "[fn:" (:label node) "] " (render-inline (:content node) :org))
+    :org  (str "[fn:" (:label node) "] " (render-inline (:content node) :org))
     (str "[^" (:label node) "]: " (render-inline (:content node) :md))))
 
 (defn- render-generic-block [node fmt]
-  (let [block-type (:block-type node)
+  (let [block-type  (:block-type node)
         export-type (:args node)]
     (case fmt
       :html (case block-type
               :warning (str "<div class=\"warning\">" (render-inline (parse-inline (:content node)) :html) "</div>")
-              :note (str "<div class=\"note\">" (render-inline (parse-inline (:content node)) :html) "</div>")
+              :note    (str "<div class=\"note\">" (render-inline (parse-inline (:content node)) :html) "</div>")
               :example (str "<pre>" (escape-html (:content node)) "</pre>")
-              :export (if (= export-type "html") (:content node) "")
+              :export  (if (= export-type "html") (:content node) "")
               (str "<div class=\"block-" (name block-type) "\">"
                    "<pre>" (escape-html (:content node)) "</pre></div>"))
-      :org (case block-type
-             :export (if (= export-type "org")
-                       (:content node)
-                       (str "#+BEGIN_EXPORT"
-                            (when (non-blank? export-type) (str " " export-type))
-                            "\n" (escape-block-content (:content node)) "\n#+END_EXPORT"))
-             (let [args (:args node)
-                   escaped-content (escape-block-content (:content node))]
-               (str "#+BEGIN_" (upper-name block-type)
-                    (when (non-blank? args) (str " " args))
-                    "\n" escaped-content "\n#+END_" (upper-name block-type))))
+      :org  (case block-type
+              :export (if (= export-type "org")
+                        (:content node)
+                        (str "#+BEGIN_EXPORT"
+                             (when (non-blank? export-type) (str " " export-type))
+                             "\n" (escape-block-content (:content node)) "\n#+END_EXPORT"))
+              (let [args            (:args node)
+                    escaped-content (escape-block-content (:content node))]
+                (str "#+BEGIN_" (upper-name block-type)
+                     (when (non-blank? args) (str " " args))
+                     "\n" escaped-content "\n#+END_" (upper-name block-type))))
       ;; markdown
       (case block-type
         :warning (str "> **Warning**\n"
                       (->> (str/split-lines (:content node))
                            (map #(str "> " %))
                            (str/join "\n")))
-        :note (str "> **Note**\n"
+        :note    (str "> **Note**\n"
                    (->> (str/split-lines (:content node))
                         (map #(str "> " %))
                         (str/join "\n")))
-        :export (if (= export-type "markdown") (:content node) "")
+        :export  (if (= export-type "markdown") (:content node) "")
         :example (str "```\n" (:content node) "\n```")
         (str "```" (name block-type) "\n" (:content node) "\n```")))))
 
 (defn- render-html-line [node fmt]
   (case fmt
     :html (:content node)
-    :org (prefix-lines "#+html: " (:content node))
+    :org  (prefix-lines "#+html: " (:content node))
     ""))
 
 (defn- render-latex-line [node fmt]
@@ -916,21 +916,21 @@ li > p { margin-top: 0.5em; }
   ([node fmt] (render-node node fmt 0))
   ([node fmt level]
    (case (:type node)
-     :document       (render-document node fmt level)
-     :section        (render-section node fmt)
-     :paragraph      (render-paragraph node fmt)
-     :list           (render-list-node node fmt level)
-     :list-item      (render-list-item-node node fmt level)
-     :table          (render-table-node node fmt level)
-     :src-block      (render-src-block node fmt)
-     :quote-block    (render-quote-block node fmt)
+     :document        (render-document node fmt level)
+     :section         (render-section node fmt)
+     :paragraph       (render-paragraph node fmt)
+     :list            (render-list-node node fmt level)
+     :list-item       (render-list-item-node node fmt level)
+     :table           (render-table-node node fmt level)
+     :src-block       (render-src-block node fmt)
+     :quote-block     (render-quote-block node fmt)
      :property-drawer (if (= fmt :org) (render-properties-org (:properties node)) "")
-     :comment        (render-comment-node node fmt)
-     :fixed-width    (render-fixed-width node fmt)
-     :footnote-def   (render-footnote-def-node node fmt)
-     :block          (render-generic-block node fmt)
-     :html-line      (render-html-line node fmt)
-     :latex-line     (render-latex-line node fmt)
+     :comment         (render-comment-node node fmt)
+     :fixed-width     (render-fixed-width node fmt)
+     :footnote-def    (render-footnote-def-node node fmt)
+     :block           (render-generic-block node fmt)
+     :html-line       (render-html-line node fmt)
+     :latex-line      (render-latex-line node fmt)
      ;; Default case for warnings or unknown types
      (if (:warning node)
        (str "<!-- Warning at line " (:error-line node) ": " (:warning node) " -->")
@@ -949,15 +949,15 @@ li > p { margin-top: 0.5em; }
                 (if (zero? n) base (str base "-" n))))
             (walk [node]
               (case (:type node)
-                :section (let [slug (heading-to-slug (:title node))
-                               base (or (get-in node [:properties :custom_id]) slug)]
+                :section                 (let [slug (heading-to-slug (:title node))
+                                               base (or (get-in node [:properties :custom_id]) slug)]
                            (-> node
                                (assoc :section-id (unique-id base))
                                (assoc :slug slug)
                                (update :children #(mapv walk %))))
                 (:document :quote-block) (update node :children #(mapv walk %))
-                :list (update node :items #(mapv walk %))
-                :list-item (update node :children #(mapv walk %))
+                :list                    (update node :items #(mapv walk %))
+                :list-item               (update node :children #(mapv walk %))
                 node))]
       (walk ast))))
 
@@ -968,25 +968,25 @@ li > p { margin-top: 0.5em; }
    Only applied when the document has num:t in #+OPTIONS (default: false)."
   [ast]
   (let [options (or (:parsed-options ast) (get-export-options ast))
-        num? (get options :num false)]
+        num?    (get options :num false)]
     (if-not num?
       ast
       (letfn [(number-children [children counters]
                 (loop [[child & more] children
-                       counters counters
-                       result []]
+                       counters       counters
+                       result         []]
                   (if (nil? child)
                     result
                     (if (= (:type child) :section)
-                      (let [level (:level child)
+                      (let [level          (:level child)
                             ;; Increment counter at this level, reset deeper levels
-                            incremented (update counters level (fnil inc 0))
-                            updated (apply dissoc incremented (filter #(> % level) (keys incremented)))
+                            incremented    (update counters level (fnil inc 0))
+                            updated        (apply dissoc incremented (filter #(> % level) (keys incremented)))
                             ;; Build section number string from level 1 to current level
-                            sec-num (str/join "." (map #(get updated % 1)
+                            sec-num        (str/join "." (map #(get updated % 1)
                                                        (range 1 (inc level))))
                             ;; Recursively number children of this section
-                            numbered-kids (number-children (:children child) updated)
+                            numbered-kids  (number-children (:children child) updated)
                             numbered-child (assoc child
                                                   :section-number sec-num
                                                   :children numbered-kids)]
@@ -1008,9 +1008,9 @@ li > p { margin-top: 0.5em; }
             (if (<= remaining 0)
               (.toString sb)
               (let [;; Find char boundary at or before max-bytes from offset
-                    end (min (+ offset max-bytes) (alength bytes))
+                    end   (min (+ offset max-bytes) (alength bytes))
                     ;; Back up if we landed in the middle of a multi-byte UTF-8 char
-                    end (loop [e end]
+                    end   (loop [e end]
                           (if (or (<= e offset)
                                   (< (bit-and (aget bytes e) 0xC0) 0x80))
                             e
@@ -1032,10 +1032,10 @@ li > p { margin-top: 0.5em; }
   [iso]
   (let [to-ics (fn [s]
                  (if (str/includes? s "T")
-                   (let [[d t] (str/split s #"T")
-                         date (str/replace d "-" "")
+                   (let [[d t]  (str/split s #"T")
+                         date   (str/replace d "-" "")
                          digits (str/replace t ":" "")
-                         time (cond-> digits (= (count digits) 4) (str "00"))]
+                         time   (cond-> digits (= (count digits) 4) (str "00"))]
                      (str date "T" time))
                    (str/replace s "-" "")))]
     (if (str/includes? iso "/")
@@ -1050,11 +1050,11 @@ li > p { margin-top: 0.5em; }
   (->> (organ/active-timestamps ast)
        (keep (fn [{:keys [origin value repeater title todo]}]
                (case origin
-                 :scheduled {:ics-type :vevent :title title :todo todo
-                             :timestamp value :repeater repeater}
+                 :scheduled {:ics-type  :vevent :title    title :todo todo
+                             :timestamp value   :repeater repeater}
                  :deadline  (when todo
-                              {:ics-type :vtodo :title title :todo todo
-                               :timestamp value :repeater repeater})
+                              {:ics-type  :vtodo :title    title :todo todo
+                               :timestamp value  :repeater repeater})
                  nil)))))
 
 (defn- uid-for-item
@@ -1063,7 +1063,7 @@ li > p { margin-top: 0.5em; }
   (let [input (str (:title item) (:timestamp item) index)
         bytes (.digest (java.security.MessageDigest/getInstance "SHA-256")
                        (.getBytes input "UTF-8"))
-        hex (str/join (map #(format "%02x" %) bytes))]
+        hex   (str/join (map #(format "%02x" %) bytes))]
     (str (subs hex 0 16) "@hop")))
 
 (def ^:private ics-rrule-freq
@@ -1082,7 +1082,7 @@ li > p { margin-top: 0.5em; }
    RFC 5545 requires DTEND to be exclusive for VALUE=DATE events."
   [date-str]
   (-> (java.time.LocalDate/parse date-str
-        (java.time.format.DateTimeFormatter/ofPattern "yyyyMMdd"))
+                                 (java.time.format.DateTimeFormatter/ofPattern "yyyyMMdd"))
       (.plusDays 1)
       (.format (java.time.format.DateTimeFormatter/ofPattern "yyyyMMdd"))))
 
@@ -1090,18 +1090,18 @@ li > p { margin-top: 0.5em; }
   "Export scheduled items as VEVENT and deadline+TODO items as VTODO."
   [ast]
   (let [items (collect-ics-items ast)
-        now (let [fmt (java.time.format.DateTimeFormatter/ofPattern "yyyyMMdd'T'HHmmss")]
+        now   (let [fmt (java.time.format.DateTimeFormatter/ofPattern "yyyyMMdd'T'HHmmss")]
               (.format (java.time.LocalDateTime/now) fmt))
         components
         (map-indexed
          (fn [idx item]
            (let [{:keys [ics-type title todo timestamp repeater]} item
-                 uid (uid-for-item item idx)
-                 ts (iso-to-ics-datetime timestamp)
-                 dtstart (:dtstart ts)
-                 is-date (not (str/includes? dtstart "T"))
-                 rrule (org-repeater-to-rrule repeater)
-                 summary (if (and todo (= ics-type :vtodo))
+                 uid                                              (uid-for-item item idx)
+                 ts                                               (iso-to-ics-datetime timestamp)
+                 dtstart                                          (:dtstart ts)
+                 is-date                                          (not (str/includes? dtstart "T"))
+                 rrule                                            (org-repeater-to-rrule repeater)
+                 summary                                          (if (and todo (= ics-type :vtodo))
                            (str (name todo) " " title)
                            title)]
              (case ics-type
@@ -1146,6 +1146,205 @@ li > p { margin-top: 0.5em; }
                     ["END:VCALENDAR"]))
          "\r\n")))
 
+;; ICS anonymised (free/busy) export -- the `ics-anon` format
+;; ---------------------------------------------------------------------------
+;; The `ics-anon` format re-emits SCHEDULED and DEADLINE timestamps as
+;; anonymised "Busy" blocks (no title or detail), merged and bounded to a
+;; forward window -- the classic free/busy view. The plain `ics` format mirrors
+;; the org timestamps verbatim; `ics-anon` works on java.time with an explicit
+;; timezone, so its events carry a TZID and a VTIMEZONE (ics emits floating
+;; times).
+
+(defn- busy-config
+  "Build the busy-mode config map from parsed CLI options."
+  [opts]
+  {:tz               (java.time.ZoneId/of (:tz opts))
+   :weeks            (:weeks opts)
+   :event-duration (:event-duration opts)})
+
+(defn- zdt [d t tz] (java.time.ZonedDateTime/of d t tz))
+(defn- ldt->zdt [ldt tz] (java.time.ZonedDateTime/of ldt tz))
+(defn- zmax [a b] (if (.isAfter a b) a b))
+(defn- zmin [a b] (if (.isBefore a b) a b))
+
+(defn- entry->base
+  "Base [start end] LocalDateTimes of a timestamp entry (event-duration fills a missing end)."
+  [{:keys [start end all-day]} event-duration]
+  (if all-day
+    (let [d (java.time.LocalDate/parse start)]
+      [(.atStartOfDay d) (.atStartOfDay (.plusDays d 1))])
+    (let [s (java.time.LocalDateTime/parse start)
+          e (if end
+              (let [e0 (java.time.LocalDateTime/parse end)]
+                (if (.isAfter e0 s) e0 (.plusDays e0 1)))
+              (.plusMinutes s event-duration))]
+      [s e])))
+
+(defn- step-ldt
+  "Shift a LocalDateTime by k units (k may be 0); handles every Org repeater unit."
+  [ldt k unit]
+  (case unit
+    :hour  (.plusHours ldt k)
+    :day   (.plusDays ldt k)
+    :week  (.plusWeeks ldt k)
+    :month (.plusMonths ldt k)
+    :year  (.plusYears ldt k)
+    nil))
+
+(defn- entry->intervals
+  "Zoned [start end] intervals of an entry, expanded over the window by its repeater."
+  [entry event-duration tz win-s win-e]
+  (let [[start-ldt end-ldt] (entry->base entry event-duration)
+        {:keys [n unit]}    (:repeater entry)
+        in-window?          (fn [zs ze] (and (.isBefore zs win-e) (.isAfter ze win-s)))]
+    (if (and n unit (step-ldt start-ldt n unit))
+      (->> (iterate #(+ % n) 0)
+           (take 5000) ; safety guard
+           (map (fn [k] [(ldt->zdt (step-ldt start-ldt k unit) tz)
+                         (ldt->zdt (step-ldt end-ldt k unit) tz)]))
+           (take-while (fn [[zs _]] (.isBefore zs win-e)))
+           (filter (fn [[zs ze]] (in-window? zs ze))))
+      (let [zs (ldt->zdt start-ldt tz)
+            ze (ldt->zdt end-ldt tz)]
+        (when (in-window? zs ze) [[zs ze]])))))
+
+(defn- busy-events
+  "Busy intervals from SCHEDULED and DEADLINE timestamps within the window."
+  [ast cfg win-s win-e]
+  (->> (organ/active-timestamps ast)
+       (filter #(#{:scheduled :deadline} (:origin %)))
+       (mapcat #(entry->intervals % (:event-duration cfg) (:tz cfg) win-s win-e))))
+
+(defn- sort-intervals [ivs]
+  (sort-by #(.toInstant (first %)) ivs))
+
+(defn- merge-intervals-zoned
+  "Merge zoned intervals that overlap or touch (sorted input)."
+  [ivs]
+  (reduce (fn [acc [s e]]
+            (if (and (seq acc) (not (.isAfter s (second (peek acc)))))
+              (conj (pop acc) [(first (peek acc)) (zmax (second (peek acc)) e)])
+              (conj acc [s e])))
+          [] ivs))
+
+(def ^:private busy-dtf
+  (java.time.format.DateTimeFormatter/ofPattern "yyyyMMdd'T'HHmmss"))
+
+(defn- offset-ics
+  "Format a UTC offset given in seconds as an ICS offset, e.g. +0200 or -0530."
+  [secs]
+  (let [a (Math/abs secs)
+        h (quot a 3600)
+        m (quot (mod a 3600) 60)
+        s (mod a 60)]
+    (str (if (neg? secs) "-" "+")
+         (format "%02d%02d" h m)
+         (when (pos? s) (format "%02d" s)))))
+
+(defn- offset-secs-at
+  "UTC offset (seconds) of tz's rules at the given epoch second."
+  [rules epoch]
+  (.getTotalSeconds (.getOffset rules (java.time.Instant/ofEpochSecond epoch))))
+
+(defn- ldt-at
+  "LocalDateTime of an epoch second seen at the given UTC offset (seconds)."
+  [epoch off-secs]
+  (java.time.LocalDateTime/ofEpochSecond
+   epoch 0 (java.time.ZoneOffset/ofTotalSeconds off-secs)))
+
+(defn- ics-observance
+  "One VTIMEZONE STANDARD/DAYLIGHT sub-component; dtstart-ldt is the onset in the
+   pre-transition offset (TZNAME omitted: locale data unavailable in bb)."
+  [daylight? off-from off-to dtstart-ldt]
+  (str/join "\r\n"
+            [(if daylight? "BEGIN:DAYLIGHT" "BEGIN:STANDARD")
+             (str "DTSTART:" (.format dtstart-ldt busy-dtf))
+             (str "TZOFFSETFROM:" (offset-ics off-from))
+             (str "TZOFFSETTO:" (offset-ics off-to))
+             (if daylight? "END:DAYLIGHT" "END:STANDARD")]))
+
+(defn- find-transitions
+  "DST transitions of tz in [s-sec e-sec], by daily scan + per-second bisection
+   (ZoneOffsetTransition is unavailable in bb). Returns [[onset off-before off-after] ...]."
+  [rules s-sec e-sec]
+  (loop [t s-sec, prev (offset-secs-at rules s-sec), acc []]
+    (if (>= t e-sec)
+      acc
+      (let [nt  (min e-sec (+ t 86400))
+            cur (offset-secs-at rules nt)]
+        (if (= cur prev)
+          (recur nt cur acc)
+          (let [onset (loop [lo t, hi nt]        ; off(lo)=prev, off(hi)=cur≠prev
+                        (if (<= (- hi lo) 1)
+                          hi
+                          (let [mid (quot (+ lo hi) 2)]
+                            (if (= (offset-secs-at rules mid) prev)
+                              (recur mid hi)
+                              (recur lo mid)))))]
+            (recur nt cur (conj acc [onset prev cur]))))))))
+
+(defn- vtimezone-block
+  "VTIMEZONE for tz over [start-instant end-instant] from java.time offsets
+   (no RRULE); the larger offset is labelled DAYLIGHT, the smaller STANDARD."
+  [tz start-instant end-instant]
+  (let [rules (.getRules tz)
+        s-sec (.getEpochSecond start-instant)
+        e-sec (.getEpochSecond end-instant)
+        trs   (find-transitions rules s-sec e-sec)
+        init  (offset-secs-at rules s-sec)
+        dst?  (fn [sec] (.isDaylightSavings rules (java.time.Instant/ofEpochSecond sec)))
+        observances
+        (cons (ics-observance (dst? s-sec) init init (ldt-at s-sec init))
+              (map (fn [[onset off-from off-to]]
+                     (ics-observance (dst? onset) off-from off-to (ldt-at onset off-from)))
+                   trs))]
+    (str/join "\r\n"
+              (concat ["BEGIN:VTIMEZONE" (str "TZID:" (.getId tz))]
+                      observances
+                      ["END:VTIMEZONE"]))))
+
+(defn- render-busy-ics
+  "Emit a VCALENDAR of zoned [start end] intervals as anonymised Busy VEVENTs."
+  [intervals tz]
+  (let [tzid  (.getId tz)
+        now   (.format (.withZone (java.time.format.DateTimeFormatter/ofPattern "yyyyMMdd'T'HHmmss'Z'")
+                                  (java.time.ZoneId/of "UTC"))
+                       (java.time.Instant/now))
+        vtz   (when (seq intervals)
+               (vtimezone-block tz
+                                (.toInstant (reduce zmin (map first intervals)))
+                                (.toInstant (reduce zmax (map second intervals)))))
+        event (fn [idx [s e]]
+                (str/join "\r\n"
+                          ["BEGIN:VEVENT"
+                           (ics-fold-line (str "UID:busy-" idx "-" (.format busy-dtf s) "@hop"))
+                           (str "DTSTAMP:" now)
+                           (ics-fold-line (str "DTSTART;TZID=" tzid ":" (.format busy-dtf s)))
+                           (ics-fold-line (str "DTEND;TZID=" tzid ":" (.format busy-dtf e)))
+                           (ics-fold-line (str "SUMMARY:" (ics-escape "Busy")))
+                           "STATUS:CONFIRMED"
+                           "TRANSP:OPAQUE"
+                           "END:VEVENT"]))]
+    (str (str/join "\r\n"
+                   (concat ["BEGIN:VCALENDAR" "VERSION:2.0" "PRODID:-//hop//EN"
+                            "CALSCALE:GREGORIAN"]
+                           (when vtz [vtz])
+                           (map-indexed event intervals)
+                           ["END:VCALENDAR"]))
+         "\r\n")))
+
+(defn- render-ast-as-busy-ics
+  "Render the AST as anonymised \"Busy\" blocks (merged SCHEDULED/DEADLINE, today over the window)."
+  [ast opts]
+  (let [cfg    (busy-config opts)
+        tz     (:tz cfg)
+        today  (java.time.LocalDate/now tz)
+        end    (.plusWeeks today (:weeks cfg))
+        win-s  (zdt today java.time.LocalTime/MIDNIGHT tz)
+        win-e  (zdt end java.time.LocalTime/MIDNIGHT tz)
+        events (busy-events ast cfg win-s win-e)]
+    (render-busy-ics (-> events sort-intervals merge-intervals-zoned) tz)))
+
 (defn- prepare-ast [ast]
   (let [options (parse-options-string (get-in ast [:meta :options]))]
     (-> ast
@@ -1165,9 +1364,9 @@ li > p { margin-top: 0.5em; }
 (defn- count-words
   "Count words in a string or vector of inline nodes."
   [s]
-  (let [^String text (cond (string? s) s
+  (let [^String text (cond (string? s)     s
                            (sequential? s) (inline-text s)
-                           :else nil)]
+                           :else           nil)]
     (if (non-blank? text)
       (let [len (.length text)]
         (loop [i 0 in-word false n 0]
@@ -1193,7 +1392,7 @@ li > p { margin-top: 0.5em; }
 (defn- content-stats
   "Extract word and image counts from a node's :content field."
   [node]
-  {:words (count-words (:content node))
+  {:words  (count-words (:content node))
    :images (count-images (:content node))})
 
 (defn- inc-stat
@@ -1209,61 +1408,61 @@ li > p { margin-top: 0.5em; }
 (defn- collect-stats
   "Recursively collect statistics from AST nodes."
   [node]
-  (let [node-type (:type node)
-        children (:children node [])
-        items (:items node [])
+  (let [node-type   (:type node)
+        children    (:children node [])
+        items       (:items node [])
         child-stats (reduce (fn [acc child]
                               (merge-with + acc (collect-stats child)))
                             {}
                             (concat children items))
-        base-stats (case node-type
-                     :section (let [planning (:planning node)]
-                                (cond-> (-> child-stats
-                                            (inc-stat :sections)
-                                            (add-stat :words (count-words (:title node))))
-                                  (:scheduled planning) (inc-stat :scheduled)
-                                  (:deadline planning)  (inc-stat :deadline)
-                                  (:closed planning)    (inc-stat :closed)))
-                     (:paragraph :quote-block :footnote-def)
-                     (let [{:keys [words images]} (content-stats node)
-                           stat-key (case node-type
-                                      :paragraph :paragraphs
-                                      :quote-block :quote-blocks
-                                      :footnote-def :footnotes)]
-                       (-> child-stats
-                           (inc-stat stat-key)
-                           (add-stat :words words)
-                           (add-stat :images images)))
-                     :table (inc-stat child-stats :tables)
-                     :list (inc-stat child-stats :lists)
-                     :list-item (-> child-stats
-                                    (inc-stat :list-items)
-                                    (add-stat :words (+ (count-words (:content node))
-                                                        (count-words (:term node))
-                                                        (count-words (:definition node))))
-                                    (add-stat :images (+ (count-images (:content node))
-                                                         (count-images (:definition node)))))
-                     :src-block (inc-stat child-stats :src-blocks)
-                     :block (inc-stat child-stats :blocks)
-                     :comment (inc-stat child-stats :comments)
-                     :fixed-width (inc-stat child-stats :fixed-width)
-                     :html-line (inc-stat child-stats :html-lines)
-                     :latex-line (inc-stat child-stats :latex-lines)
-                     :property-drawer (inc-stat child-stats :property-drawers)
-                     :document child-stats
-                     child-stats)]
+        base-stats  (case node-type
+                      :section         (let [planning (:planning node)]
+                                 (cond-> (-> child-stats
+                                             (inc-stat :sections)
+                                             (add-stat :words (count-words (:title node))))
+                                   (:scheduled planning) (inc-stat :scheduled)
+                                   (:deadline planning)  (inc-stat :deadline)
+                                   (:closed planning)    (inc-stat :closed)))
+                      (:paragraph :quote-block :footnote-def)
+                      (let [{:keys [words images]} (content-stats node)
+                            stat-key               (case node-type
+                                                     :paragraph    :paragraphs
+                                                     :quote-block  :quote-blocks
+                                                     :footnote-def :footnotes)]
+                        (-> child-stats
+                            (inc-stat stat-key)
+                            (add-stat :words words)
+                            (add-stat :images images)))
+                      :table           (inc-stat child-stats :tables)
+                      :list            (inc-stat child-stats :lists)
+                      :list-item       (-> child-stats
+                                     (inc-stat :list-items)
+                                     (add-stat :words (+ (count-words (:content node))
+                                                         (count-words (:term node))
+                                                         (count-words (:definition node))))
+                                     (add-stat :images (+ (count-images (:content node))
+                                                          (count-images (:definition node)))))
+                      :src-block       (inc-stat child-stats :src-blocks)
+                      :block           (inc-stat child-stats :blocks)
+                      :comment         (inc-stat child-stats :comments)
+                      :fixed-width     (inc-stat child-stats :fixed-width)
+                      :html-line       (inc-stat child-stats :html-lines)
+                      :latex-line      (inc-stat child-stats :latex-lines)
+                      :property-drawer (inc-stat child-stats :property-drawers)
+                      :document        child-stats
+                      child-stats)]
     base-stats))
 
 (defn compute-stats
   "Compute statistics for an AST and return a sorted map."
   [ast]
-  (let [raw-stats   (collect-stats ast)
-        ordered-keys [:sections :paragraphs :words :images :lists :list-items
+  (let [raw-stats     (collect-stats ast)
+        ordered-keys  [:sections :paragraphs :words :images :lists :list-items
                       :tables :src-blocks :quote-blocks :blocks
                       :footnotes :comments :fixed-width :html-lines
                       :latex-lines :property-drawers
                       :scheduled :deadline :closed]
-        index-map   (zipmap ordered-keys (range))
+        index-map     (zipmap ordered-keys (range))
         present-stats (into {} (filter (fn [[_ v]] (and v (pos? v))) raw-stats))]
     (into (sorted-map-by (fn [a b]
                            (let [c (compare (get index-map a 999)
@@ -1272,25 +1471,25 @@ li > p { margin-top: 0.5em; }
           present-stats)))
 
 (def ^:private stats-label-map
-  {:sections "Sections"
-   :paragraphs "Paragraphs"
-   :words "Words"
-   :images "Images"
-   :lists "Lists"
-   :list-items "List items"
-   :tables "Tables"
-   :src-blocks "Source blocks"
-   :quote-blocks "Quote blocks"
-   :blocks "Other blocks"
-   :footnotes "Footnotes"
-   :comments "Comments"
-   :fixed-width "Fixed-width blocks"
-   :html-lines "HTML lines"
-   :latex-lines "LaTeX lines"
+  {:sections         "Sections"
+   :paragraphs       "Paragraphs"
+   :words            "Words"
+   :images           "Images"
+   :lists            "Lists"
+   :list-items       "List items"
+   :tables           "Tables"
+   :src-blocks       "Source blocks"
+   :quote-blocks     "Quote blocks"
+   :blocks           "Other blocks"
+   :footnotes        "Footnotes"
+   :comments         "Comments"
+   :fixed-width      "Fixed-width blocks"
+   :html-lines       "HTML lines"
+   :latex-lines      "LaTeX lines"
    :property-drawers "Property drawers"
-   :scheduled "Scheduled"
-   :deadline "Deadline"
-   :closed "Closed"})
+   :scheduled        "Scheduled"
+   :deadline         "Deadline"
+   :closed           "Closed"})
 
 (defn format-stats
   "Format statistics for display."
@@ -1300,7 +1499,7 @@ li > p { margin-top: 0.5em; }
                            (reduce max 0))]
     (->> stats
          (map (fn [[k v]]
-                (let [label (get stats-label-map k (name k))
+                (let [label   (get stats-label-map k (name k))
                       padding (repeat-str (- max-label-len (count label)) " ")]
                   (str label ": " padding v))))
          (str/join "\n"))))
@@ -1345,8 +1544,8 @@ li > p { margin-top: 0.5em; }
 (def ^:private cli-options
   [["-b" "--base-url URL" "Base URL prepended to relative links (include trailing slash)"]
    ["-c" "--css-theme THEME" "CSS theme: a URL, a local .css file, or a pico-theme name (e.g. org, doric)"]
-   ["-f" "--format FORMAT" "Output format: json, edn, yaml, md, html, org, or ics"
-    :default "json" :validate [#{"json" "edn" "yaml" "md" "html" "org" "ics"} "Must be: json, edn, yaml, md, html, org, ics"]]
+   ["-f" "--format FORMAT" "Output format: json, edn, yaml, md, html, org, ics, or ics-anon"
+    :default "json" :validate [#{"json" "edn" "yaml" "md" "html" "org" "ics" "ics-anon"} "Must be: json, edn, yaml, md, html, org, ics, ics-anon"]]
    ["-h" "--help" "Show help"]
    ["-i" "--id REGEX" "Filter: ID or CUSTOM_ID matches" :parse-fn re-pattern]
    ["-I" "--section-id REGEX" "Filter: ancestor ID or CUSTOM_ID matches" :parse-fn re-pattern]
@@ -1359,7 +1558,13 @@ li > p { margin-top: 0.5em; }
     :default "md" :validate [#{"md" "html" "org"} "Must be: md, html, org"]]
    ["-s" "--stats" "Compute and display document statistics"]
    ["-t" "--title REGEX" "Filter: section title matches" :parse-fn re-pattern]
-   ["-T" "--section-title REGEX" "Filter: ancestor title matches" :parse-fn re-pattern]])
+   ["-T" "--section-title REGEX" "Filter: ancestor title matches" :parse-fn re-pattern]
+   ;; Tuning for the ics-anon format
+   ["-w" "--weeks N" "ics-anon: weeks ahead to scan (default 4)"
+    :default 4 :parse-fn #(Integer/parseInt %) :validate [pos? "Must be positive"]]
+   ["-d" "--event-duration N" "ics-anon: default minutes for events without an end time (default 60)"
+    :default 60 :parse-fn #(Integer/parseInt %) :validate [pos? "Must be positive"]]
+   [nil "--tz ZONE" "ics-anon: timezone (default Europe/Paris)" :default "Europe/Paris"]])
 
 (defn- usage [summary]
   (str/join \newline
@@ -1394,30 +1599,30 @@ li > p { margin-top: 0.5em; }
       (exit-error "Expected one argument (org-file or '-')" summary)
 
       :else
-      (let [file-path (first arguments)
+      (let [file-path   (first arguments)
             org-content (if (= file-path "-")
                           (slurp *in*)
                           (try (slurp file-path)
                                (catch java.io.FileNotFoundException _
                                  (exit-error (str "File not found - " file-path)))))]
         (try
-          (binding [*base-url* (when-let [u (:base-url options)]
-                                 (cond-> u (not (str/ends-with? u "/")) (str "/")))
+          (binding [*base-url*  (when-let [u (:base-url options)]
+                                  (cond-> u (not (str/ends-with? u "/")) (str "/")))
                     *css-theme* (when-let [v (:css-theme options)]
                                   (resolve-css-theme v))]
-            (let [unwrap? (not (:no-unwrap options))
-                  ast (organ/parse-org org-content {:unwrap? unwrap?})
-                  filter-opts {:level-limit (:level-limit options)
-                               :level-limit-inclusive (:level-limit-inclusive options)
-                               :title-pattern (:title options)
-                               :id-pattern (:id options)
-                               :section-title-pattern (:section-title options)
-                               :section-id-pattern (:section-id options)}
-                  filtered-ast (organ/filter-ast ast filter-opts)
+            (let [unwrap?       (not (:no-unwrap options))
+                  ast           (organ/parse-org org-content {:unwrap? unwrap?})
+                  filter-opts   {:level-limit           (:level-limit options)
+                                 :level-limit-inclusive (:level-limit-inclusive options)
+                                 :title-pattern         (:title options)
+                                 :id-pattern            (:id options)
+                                 :section-title-pattern (:section-title options)
+                                 :section-id-pattern    (:section-id options)}
+                  filtered-ast  (organ/filter-ast ast filter-opts)
                   output-format (:format options)
                   render-format (keyword (:render options))
                   is-org-output (= output-format "org")
-                  cleaned-ast (if is-org-output filtered-ast (organ/clean-node filtered-ast))]
+                  cleaned-ast   (if is-org-output filtered-ast (organ/clean-node filtered-ast))]
               ;; Report parse errors to stderr if any
               (when-let [errs (:parse-errors cleaned-ast)]
                 (binding [*out* *err*]
@@ -1441,11 +1646,15 @@ li > p { margin-top: 0.5em; }
                 (do (print (render-ast-as-ics filtered-ast))
                     (flush))
 
+                (= output-format "ics-anon")
+                (do (print (render-ast-as-busy-ics filtered-ast options))
+                    (flush))
+
                 :else
                 (let [rendered-ast (render-content-in-node cleaned-ast render-format)]
                   (case output-format
                     "json" (println (format-ast-as-json rendered-ast))
-                    "edn" (println (organ/format-ast-as-edn rendered-ast))
+                    "edn"  (println (organ/format-ast-as-edn rendered-ast))
                     "yaml" (println (format-ast-as-yaml rendered-ast)))))
               (System/exit 0)))
           (catch clojure.lang.ExceptionInfo e

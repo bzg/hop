@@ -17,6 +17,18 @@ Built on [[https://github.com/bzg/organ][organ]], a Clojure Org parser.
 : hop -f edn notes.org                        # AST as EDN
 : hop -f yaml notes.org                       # AST as YAML
 : hop -f ics notes.org                        # Export scheduled items as ICS
+: hop -f ics-anon notes.org                   # Same, anonymised as "Busy" free/busy blocks
+
+The =ics-anon= format re-emits =SCHEDULED= and =DEADLINE= timestamps as
+anonymised "Busy" blocks (no title or detail), merged and bounded to a forward
+window. Tune it with:
+
+: hop -f ics-anon -w 8 notes.org              # scan 8 weeks ahead (default 4)
+: hop -f ics-anon --tz America/Montreal notes.org
+
+- =-w/--weeks=     weeks ahead to scan (default 4)
+- =-d/--event-duration=  duration for events with no end time (default 60)
+- =--tz=           timezone for the output (default Europe/Paris)
 
 Render AST content in a different format:
 
