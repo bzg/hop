@@ -16,6 +16,9 @@
 - [6 Inline Elements](#inline-elements)
 - [7 Fixed Width and Comments](#fixed-width-and-comments)
 - [8 Footnotes](#footnotes)
+- [9 Une tâche très longue avec des caractères accentués éàçùûñ pour vérifier le pliage RFC 5545 sur du texte UTF-8](#une-tâche-très-longue-avec-des-caractères-accentués-éàçùûñ-pour-vérifier-le-pliage-rfc-5545-sur-du-texte-utf-8)
+- [10 Réunion d'équipe](#réunion-déquipe)
+- [11 Daily standup](#daily-standup)
 
 Some top-level paragraph with **bold**, *italic*, _underline_, ~~strikethrough~~, `code`, and `verbatim` markup.
 
@@ -121,3 +124,15 @@ Paragraph referencing another footnote[^2].
 [^1]: First footnote definition.
 
 [^2]: Second footnote definition.
+
+# **TODO** 9 Une tâche très longue avec des caractères accentués éàçùûñ pour vérifier le pliage RFC 5545 sur du texte UTF-8
+**DEADLINE:** 2025-04-20
+
+
+# 10 Réunion d'équipe `:meeting:`
+**SCHEDULED:** 2025-05-10T14:00/2025-05-10T16:00
+
+
+# 11 Daily standup
+**SCHEDULED:** 2025-06-01T09:00 +1d
+

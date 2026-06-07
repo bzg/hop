@@ -1009,10 +1009,12 @@ li > p { margin-top: 0.5em; }
               (.toString sb)
               (let [;; Find char boundary at or before max-bytes from offset
                     end   (min (+ offset max-bytes) (alength bytes))
-                    ;; Back up if we landed in the middle of a multi-byte UTF-8 char
+                    ;; Back up if we landed on a UTF-8 continuation byte (10xxxxxx).
+                    ;; e == (alength bytes) is a valid cut point (end of buffer).
                     end   (loop [e end]
                           (if (or (<= e offset)
-                                  (< (bit-and (aget bytes e) 0xC0) 0x80))
+                                  (>= e (alength bytes))
+                                  (not= 0x80 (bit-and (aget bytes e) 0xC0)))
                             e
                             (recur (dec e))))
                     chunk (String. bytes offset (- end offset) "UTF-8")]
@@ -1090,8 +1092,9 @@ li > p { margin-top: 0.5em; }
   "Export scheduled items as VEVENT and deadline+TODO items as VTODO."
   [ast]
   (let [items (collect-ics-items ast)
-        now   (let [fmt (java.time.format.DateTimeFormatter/ofPattern "yyyyMMdd'T'HHmmss")]
-              (.format (java.time.LocalDateTime/now) fmt))
+        now   (let [fmt (-> (java.time.format.DateTimeFormatter/ofPattern "yyyyMMdd'T'HHmmss'Z'")
+                            (.withZone (java.time.ZoneId/of "UTC")))]
+                (.format fmt (java.time.Instant/now)))
         components
         (map-indexed
          (fn [idx item]
@@ -1117,8 +1120,7 @@ li > p { margin-top: 0.5em; }
                             (if-let [dtend (:dtend ts)]
                               [(str "DTSTART:" dtstart)
                                (str "DTEND:" dtend)]
-                              [(str "DTSTART:" dtstart)
-                               (str "DTEND:" dtstart)]))
+                              [(str "DTSTART:" dtstart)]))
                           (when rrule [rrule])
                           [(ics-fold-line (str "SUMMARY:" (ics-escape summary)))
                            "END:VEVENT"]))
@@ -1149,11 +1151,13 @@ li > p { margin-top: 0.5em; }
 ;; ICS anonymised (free/busy) export -- the `ics-anon` format
 ;; ---------------------------------------------------------------------------
 ;; The `ics-anon` format re-emits SCHEDULED and DEADLINE timestamps as
-;; anonymised "Busy" blocks (no title or detail), merged and bounded to a
-;; forward window -- the classic free/busy view. The plain `ics` format mirrors
-;; the org timestamps verbatim; `ics-anon` works on java.time with an explicit
-;; timezone, so its events carry a TZID and a VTIMEZONE (ics emits floating
-;; times).
+;; anonymised "Busy" blocks (no title or detail), bounded to a forward window
+;; -- the classic free/busy view. Strictly overlapping intervals are merged;
+;; touching boundaries (e.g. consecutive all-day occurrences at midnight) stay
+;; distinct. The `--tz` option only controls how org timestamps are anchored;
+;; the emitted datetimes are normalised to UTC (Z suffix) so no VTIMEZONE is
+;; needed. The plain `ics` format, by contrast, mirrors the org timestamps
+;; verbatim as floating times.
 
 (defn- busy-config
   "Build the busy-mode config map from parsed CLI options."
@@ -1165,7 +1169,6 @@ li > p { margin-top: 0.5em; }
 (defn- zdt [d t tz] (java.time.ZonedDateTime/of d t tz))
 (defn- ldt->zdt [ldt tz] (java.time.ZonedDateTime/of ldt tz))
 (defn- zmax [a b] (if (.isAfter a b) a b))
-(defn- zmin [a b] (if (.isBefore a b) a b))
 
 (defn- entry->base
   "Base [start end] LocalDateTimes of a timestamp entry (event-duration fills a missing end)."
@@ -1219,116 +1222,40 @@ li > p { margin-top: 0.5em; }
   (sort-by #(.toInstant (first %)) ivs))
 
 (defn- merge-intervals-zoned
-  "Merge zoned intervals that overlap or touch (sorted input)."
+  "Merge zoned intervals that strictly overlap (sorted input). Touching
+   boundaries (e.g. back-to-back all-day events at midnight) stay distinct so
+   each occurrence renders as its own VEVENT."
   [ivs]
   (reduce (fn [acc [s e]]
-            (if (and (seq acc) (not (.isAfter s (second (peek acc)))))
+            (if (and (seq acc) (.isBefore s (second (peek acc))))
               (conj (pop acc) [(first (peek acc)) (zmax (second (peek acc)) e)])
               (conj acc [s e])))
           [] ivs))
 
-(def ^:private busy-dtf
-  (java.time.format.DateTimeFormatter/ofPattern "yyyyMMdd'T'HHmmss"))
-
-(defn- offset-ics
-  "Format a UTC offset given in seconds as an ICS offset, e.g. +0200 or -0530."
-  [secs]
-  (let [a (Math/abs secs)
-        h (quot a 3600)
-        m (quot (mod a 3600) 60)
-        s (mod a 60)]
-    (str (if (neg? secs) "-" "+")
-         (format "%02d%02d" h m)
-         (when (pos? s) (format "%02d" s)))))
-
-(defn- offset-secs-at
-  "UTC offset (seconds) of tz's rules at the given epoch second."
-  [rules epoch]
-  (.getTotalSeconds (.getOffset rules (java.time.Instant/ofEpochSecond epoch))))
-
-(defn- ldt-at
-  "LocalDateTime of an epoch second seen at the given UTC offset (seconds)."
-  [epoch off-secs]
-  (java.time.LocalDateTime/ofEpochSecond
-   epoch 0 (java.time.ZoneOffset/ofTotalSeconds off-secs)))
-
-(defn- ics-observance
-  "One VTIMEZONE STANDARD/DAYLIGHT sub-component; dtstart-ldt is the onset in the
-   pre-transition offset (TZNAME omitted: locale data unavailable in bb)."
-  [daylight? off-from off-to dtstart-ldt]
-  (str/join "\r\n"
-            [(if daylight? "BEGIN:DAYLIGHT" "BEGIN:STANDARD")
-             (str "DTSTART:" (.format dtstart-ldt busy-dtf))
-             (str "TZOFFSETFROM:" (offset-ics off-from))
-             (str "TZOFFSETTO:" (offset-ics off-to))
-             (if daylight? "END:DAYLIGHT" "END:STANDARD")]))
-
-(defn- find-transitions
-  "DST transitions of tz in [s-sec e-sec], by daily scan + per-second bisection
-   (ZoneOffsetTransition is unavailable in bb). Returns [[onset off-before off-after] ...]."
-  [rules s-sec e-sec]
-  (loop [t s-sec, prev (offset-secs-at rules s-sec), acc []]
-    (if (>= t e-sec)
-      acc
-      (let [nt  (min e-sec (+ t 86400))
-            cur (offset-secs-at rules nt)]
-        (if (= cur prev)
-          (recur nt cur acc)
-          (let [onset (loop [lo t, hi nt]        ; off(lo)=prev, off(hi)=cur≠prev
-                        (if (<= (- hi lo) 1)
-                          hi
-                          (let [mid (quot (+ lo hi) 2)]
-                            (if (= (offset-secs-at rules mid) prev)
-                              (recur mid hi)
-                              (recur lo mid)))))]
-            (recur nt cur (conj acc [onset prev cur]))))))))
-
-(defn- vtimezone-block
-  "VTIMEZONE for tz over [start-instant end-instant] from java.time offsets
-   (no RRULE); the larger offset is labelled DAYLIGHT, the smaller STANDARD."
-  [tz start-instant end-instant]
-  (let [rules (.getRules tz)
-        s-sec (.getEpochSecond start-instant)
-        e-sec (.getEpochSecond end-instant)
-        trs   (find-transitions rules s-sec e-sec)
-        init  (offset-secs-at rules s-sec)
-        dst?  (fn [sec] (.isDaylightSavings rules (java.time.Instant/ofEpochSecond sec)))
-        observances
-        (cons (ics-observance (dst? s-sec) init init (ldt-at s-sec init))
-              (map (fn [[onset off-from off-to]]
-                     (ics-observance (dst? onset) off-from off-to (ldt-at onset off-from)))
-                   trs))]
-    (str/join "\r\n"
-              (concat ["BEGIN:VTIMEZONE" (str "TZID:" (.getId tz))]
-                      observances
-                      ["END:VTIMEZONE"]))))
+(def ^:private busy-utc-dtf
+  (-> (java.time.format.DateTimeFormatter/ofPattern "yyyyMMdd'T'HHmmss'Z'")
+      (.withZone (java.time.ZoneId/of "UTC"))))
 
 (defn- render-busy-ics
-  "Emit a VCALENDAR of zoned [start end] intervals as anonymised Busy VEVENTs."
-  [intervals tz]
-  (let [tzid  (.getId tz)
-        now   (.format (.withZone (java.time.format.DateTimeFormatter/ofPattern "yyyyMMdd'T'HHmmss'Z'")
-                                  (java.time.ZoneId/of "UTC"))
-                       (java.time.Instant/now))
-        vtz   (when (seq intervals)
-               (vtimezone-block tz
-                                (.toInstant (reduce zmin (map first intervals)))
-                                (.toInstant (reduce zmax (map second intervals)))))
-        event (fn [idx [s e]]
-                (str/join "\r\n"
-                          ["BEGIN:VEVENT"
-                           (ics-fold-line (str "UID:busy-" idx "-" (.format busy-dtf s) "@hop"))
-                           (str "DTSTAMP:" now)
-                           (ics-fold-line (str "DTSTART;TZID=" tzid ":" (.format busy-dtf s)))
-                           (ics-fold-line (str "DTEND;TZID=" tzid ":" (.format busy-dtf e)))
-                           (ics-fold-line (str "SUMMARY:" (ics-escape "Busy")))
-                           "STATUS:CONFIRMED"
-                           "TRANSP:OPAQUE"
-                           "END:VEVENT"]))]
+  "Emit a VCALENDAR of zoned [start end] intervals as anonymised Busy VEVENTs.
+   Datetimes are normalised to UTC (Z suffix) so no VTIMEZONE is needed."
+  [intervals]
+  (let [now     (.format busy-utc-dtf (java.time.Instant/now))
+        fmt-utc (fn [zdt] (.format busy-utc-dtf (.toInstant zdt)))
+        event   (fn [idx [s e]]
+                  (str/join "\r\n"
+                            ["BEGIN:VEVENT"
+                             (ics-fold-line (str "UID:busy-" idx "-" (fmt-utc s) "@hop"))
+                             (str "DTSTAMP:" now)
+                             (str "DTSTART:" (fmt-utc s))
+                             (str "DTEND:" (fmt-utc e))
+                             (ics-fold-line (str "SUMMARY:" (ics-escape "Busy")))
+                             "STATUS:CONFIRMED"
+                             "TRANSP:OPAQUE"
+                             "END:VEVENT"]))]
     (str (str/join "\r\n"
                    (concat ["BEGIN:VCALENDAR" "VERSION:2.0" "PRODID:-//hop//EN"
                             "CALSCALE:GREGORIAN"]
-                           (when vtz [vtz])
                            (map-indexed event intervals)
                            ["END:VCALENDAR"]))
          "\r\n")))
@@ -1343,7 +1270,7 @@ li > p { margin-top: 0.5em; }
         win-s  (zdt today java.time.LocalTime/MIDNIGHT tz)
         win-e  (zdt end java.time.LocalTime/MIDNIGHT tz)
         events (busy-events ast cfg win-s win-e)]
-    (render-busy-ics (-> events sort-intervals merge-intervals-zoned) tz)))
+    (render-busy-ics (-> events sort-intervals merge-intervals-zoned))))
 
 (defn- prepare-ast [ast]
   (let [options (parse-options-string (get-in ast [:meta :options]))]

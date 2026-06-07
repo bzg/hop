@@ -18,7 +18,7 @@
 
 (defn- normalize [ext text]
   (if (= ext "ics")
-    (str/replace text #"DTSTAMP:\d{8}T\d{6}" "DTSTAMP:NORMALIZED")
+    (str/replace text #"DTSTAMP:\d{8}T\d{6}Z" "DTSTAMP:NORMALIZED")
     text))
 
 (defn generate []

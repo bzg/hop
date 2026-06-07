@@ -259,5 +259,36 @@ children:
   blank-lines-after-title: 1
   title: Footnotes
   level: 1
+- path:
+  - Une tâche très longue avec des caractères accentués éàçùûñ pour vérifier le pliage RFC 5545 sur du texte UTF-8
+  blank-lines-before: 1
+  type: section
+  blank-lines-after-title: 1
+  title: Une tâche très longue avec des caractères accentués éàçùûñ pour vérifier le pliage RFC 5545 sur du texte UTF-8
+  level: 1
+  todo: TODO
+  planning:
+    deadline: '2025-04-20'
+- path:
+  - Réunion d'équipe
+  tags:
+  - meeting
+  blank-lines-before: 0
+  type: section
+  blank-lines-after-title: 1
+  title: Réunion d'équipe
+  level: 1
+  planning:
+    scheduled: 2025-05-10T14:00/2025-05-10T16:00
+- path:
+  - Daily standup
+  blank-lines-before: 0
+  type: section
+  blank-lines-after-title: 0
+  title: Daily standup
+  level: 1
+  planning:
+    scheduled: 2025-06-01T09:00
+    scheduled-repeat: +1d
 type: document
 

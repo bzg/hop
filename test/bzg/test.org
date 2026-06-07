@@ -107,3 +107,12 @@ Paragraph referencing another footnote[fn:2].
 [fn:1] First footnote definition.
 
 [fn:2] Second footnote definition.
+
+* TODO Une tâche très longue avec des caractères accentués éàçùûñ pour vérifier le pliage RFC 5545 sur du texte UTF-8
+  DEADLINE: <2025-04-20 Sun>
+
+* Réunion d'équipe                                                  :meeting:
+  SCHEDULED: <2025-05-10 Sat 14:00-16:00>
+
+* Daily standup
+  SCHEDULED: <2025-06-01 Sun 09:00 +1d>
