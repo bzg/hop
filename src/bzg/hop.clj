@@ -1152,19 +1152,21 @@ li > p { margin-top: 0.5em; }
 ;; ---------------------------------------------------------------------------
 ;; The `ics-anon` format re-emits SCHEDULED and DEADLINE timestamps as
 ;; anonymised "Busy" blocks (no title or detail), bounded to a forward window
-;; -- the classic free/busy view. Strictly overlapping intervals are merged;
-;; touching boundaries (e.g. consecutive all-day occurrences at midnight) stay
-;; distinct. The `--tz` option only controls how org timestamps are anchored;
-;; the emitted datetimes are normalised to UTC (Z suffix) so no VTIMEZONE is
-;; needed. The plain `ics` format, by contrast, mirrors the org timestamps
-;; verbatim as floating times.
+;; -- the classic free/busy view. All-day timestamps are skipped by default
+;; since they don't block time the way a meeting does (use --include-all-day
+;; to opt back in). Strictly overlapping intervals are merged; touching
+;; boundaries stay distinct. The `--tz` option only controls how org
+;; timestamps are anchored; the emitted datetimes are normalised to UTC (Z
+;; suffix) so no VTIMEZONE is needed. The plain `ics` format, by contrast,
+;; mirrors the org timestamps verbatim as floating times.
 
 (defn- busy-config
   "Build the busy-mode config map from parsed CLI options."
   [opts]
-  {:tz               (java.time.ZoneId/of (:tz opts))
-   :weeks            (:weeks opts)
-   :event-duration (:event-duration opts)})
+  {:tz              (java.time.ZoneId/of (:tz opts))
+   :weeks           (:weeks opts)
+   :event-duration  (:event-duration opts)
+   :include-all-day (boolean (:include-all-day opts))})
 
 (defn- zdt [d t tz] (java.time.ZonedDateTime/of d t tz))
 (defn- ldt->zdt [ldt tz] (java.time.ZonedDateTime/of ldt tz))
@@ -1212,10 +1214,13 @@ li > p { margin-top: 0.5em; }
         (when (in-window? zs ze) [[zs ze]])))))
 
 (defn- busy-events
-  "Busy intervals from SCHEDULED and DEADLINE timestamps within the window."
+  "Busy intervals from SCHEDULED and DEADLINE timestamps within the window.
+   All-day entries are skipped by default (free/busy convention); they only
+   contribute when :include-all-day is set on cfg."
   [ast cfg win-s win-e]
   (->> (organ/active-timestamps ast)
        (filter #(#{:scheduled :deadline} (:origin %)))
+       (filter #(or (:include-all-day cfg) (not (:all-day %))))
        (mapcat #(entry->intervals % (:event-duration cfg) (:tz cfg) win-s win-e))))
 
 (defn- sort-intervals [ivs]
@@ -1491,7 +1496,8 @@ li > p { margin-top: 0.5em; }
     :default 4 :parse-fn #(Integer/parseInt %) :validate [pos? "Must be positive"]]
    ["-d" "--event-duration N" "ics-anon: default minutes for events without an end time (default 60)"
     :default 60 :parse-fn #(Integer/parseInt %) :validate [pos? "Must be positive"]]
-   [nil "--tz ZONE" "ics-anon: timezone (default Europe/Paris)" :default "Europe/Paris"]])
+   [nil "--tz ZONE" "ics-anon: timezone (default Europe/Paris)" :default "Europe/Paris"]
+   [nil "--include-all-day" "ics-anon: also emit all-day SCHEDULED/DEADLINE as busy (off by default)"]])
 
 (defn- usage [summary]
   (str/join \newline
