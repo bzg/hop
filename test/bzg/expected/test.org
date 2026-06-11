@@ -17,7 +17,6 @@
 - 9 Une tâche très longue avec des caractères accentués éàçùûñ pour vérifier le pliage RFC 5545 sur du texte UTF-8
 - 10 Réunion d'équipe
 - 11 Daily standup
-- 12 Rendez-vous déjà passé
 
 Some top-level paragraph with *bold*, /italic/, _underline_, +strikethrough+, ~code~, and =verbatim= markup.
 
@@ -131,5 +130,3 @@ SCHEDULED: <2025-05-10 14:00-16:00>
 * 11 Daily standup
 SCHEDULED: <2025-06-01 09:00 +1d>
 
-* DONE 12 Rendez-vous déjà passé
-SCHEDULED: <2025-02-14 09:00>

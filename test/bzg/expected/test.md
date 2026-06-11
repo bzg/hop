@@ -19,7 +19,6 @@
 - [9 Une tâche très longue avec des caractères accentués éàçùûñ pour vérifier le pliage RFC 5545 sur du texte UTF-8](#une-tâche-très-longue-avec-des-caractères-accentués-éàçùûñ-pour-vérifier-le-pliage-rfc-5545-sur-du-texte-utf-8)
 - [10 Réunion d'équipe](#réunion-déquipe)
 - [11 Daily standup](#daily-standup)
-- [12 Rendez-vous déjà passé](#rendez-vous-déjà-passé)
 
 Some top-level paragraph with **bold**, *italic*, _underline_, ~~strikethrough~~, `code`, and `verbatim` markup.
 
@@ -137,7 +136,4 @@ Paragraph referencing another footnote[^2].
 # 11 Daily standup
 **SCHEDULED:** 2025-06-01T09:00 +1d
 
-
-# **DONE** 12 Rendez-vous déjà passé
-**SCHEDULED:** 2025-02-14T09:00
 

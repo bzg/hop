@@ -1070,9 +1070,26 @@ li > p { margin-top: 0.5em; }
    organ did not recognise (regex is hardcoded to TODO|DONE)."
   [{:keys [todo title]} done-keywords]
   (or (and todo (contains? done-keywords (name todo)))
-      (and (string? title)
-           (let [first-word (first (str/split (str/trim title) #"\s+" 2))]
-             (contains? done-keywords first-word)))))
+      (let [s (cond (string? title)     title
+                    (sequential? title) (organ/inline-text title)
+                    :else               nil)]
+        (and s (let [first-word (first (str/split (str/trim s) #"\s+" 2))]
+                 (contains? done-keywords first-word))))))
+
+(defn- prune-done-sections
+  "Walk the AST and remove every section subtree whose heading is in a DONE
+   state (heading + all descendants dropped). Non-section nodes are kept and
+   their :children recursed into."
+  [node done-keywords]
+  (cond
+    (and (map? node) (= :section (:type node))
+         (done-item? {:todo (:todo node) :title (:title node)} done-keywords))
+    nil
+
+    (and (map? node) (vector? (:children node)))
+    (update node :children #(->> % (keep (fn [c] (prune-done-sections c done-keywords))) vec))
+
+    :else node))
 
 (defn- collect-ics-items
   "Collect SCHEDULED -> VEVENT and DEADLINE+TODO -> VTODO items, using organ's
@@ -1532,7 +1549,10 @@ li > p { margin-top: 0.5em; }
    ["-d" "--event-duration N" "ics-anon: default minutes for events without an end time (default 60)"
     :default 60 :parse-fn #(Integer/parseInt %) :validate [pos? "Must be positive"]]
    [nil "--tz ZONE" "ics-anon: timezone (default Europe/Paris)" :default "Europe/Paris"]
-   [nil "--include-all-day" "ics-anon: also emit all-day SCHEDULED/DEADLINE as busy (off by default)"]])
+   [nil "--include-all-day" "ics-anon: also emit all-day SCHEDULED/DEADLINE as busy (off by default)"]
+   [nil "--done-keywords KW,KW" "Comma-separated extra DONE keywords (e.g. CANX,CANCELED); merged with DONE and any #+TODO: directives in the file"
+    :parse-fn #(into #{} (remove str/blank? (map str/trim (str/split % #","))))]
+   [nil "--keep-done" "Keep subtrees whose heading is in a DONE state (by default they're stripped from every output)"]])
 
 (defn- usage [summary]
   (str/join \newline
@@ -1580,14 +1600,17 @@ li > p { margin-top: 0.5em; }
                                   (resolve-css-theme v))]
             (let [unwrap?       (not (:no-unwrap options))
                   ast           (organ/parse-org org-content {:unwrap? unwrap?})
-                  done-keywords (parse-done-keywords org-content)
+                  done-keywords (into (parse-done-keywords org-content)
+                                      (:done-keywords options))
                   filter-opts   {:level-limit           (:level-limit options)
                                  :level-limit-inclusive (:level-limit-inclusive options)
                                  :title-pattern         (:title options)
                                  :id-pattern            (:id options)
                                  :section-title-pattern (:section-title options)
                                  :section-id-pattern    (:section-id options)}
-                  filtered-ast  (organ/filter-ast ast filter-opts)
+                  filtered-ast  (cond-> (organ/filter-ast ast filter-opts)
+                                  (not (:keep-done options))
+                                  (prune-done-sections done-keywords))
                   output-format (:format options)
                   render-format (keyword (:render options))
                   is-org-output (= output-format "org")

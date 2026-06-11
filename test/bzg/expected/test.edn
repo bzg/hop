@@ -231,14 +231,7 @@
    :blank-lines-after-title 1,
    :title "Daily standup",
    :level 1,
-   :planning {:scheduled "2025-06-01T09:00", :scheduled-repeat "+1d"}}
-  {:path ["Rendez-vous déjà passé"],
-   :blank-lines-before 0,
-   :type :section,
-   :blank-lines-after-title 0,
-   :title "Rendez-vous déjà passé",
-   :level 1,
-   :todo :DONE,
-   :planning {:scheduled "2025-02-14T09:00"}}],
+   :planning
+   {:scheduled "2025-06-01T09:00", :scheduled-repeat "+1d"}}],
  :type :document}
 
