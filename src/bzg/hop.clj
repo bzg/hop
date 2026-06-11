@@ -1202,7 +1202,7 @@ li > p { margin-top: 0.5em; }
 ;; The `ics-anon` format re-emits SCHEDULED and DEADLINE timestamps as
 ;; anonymised "Busy" blocks (no title or detail), bounded to a forward window
 ;; -- the classic free/busy view. All-day timestamps are skipped by default
-;; since they don't block time the way a meeting does (use --include-all-day
+;; since they don't block time the way a meeting does (use --all-day
 ;; to opt back in). Strictly overlapping intervals are merged; touching
 ;; boundaries stay distinct. The `--tz` option only controls how org
 ;; timestamps are anchored; the emitted datetimes are normalised to UTC (Z
@@ -1215,7 +1215,7 @@ li > p { margin-top: 0.5em; }
   {:tz              (java.time.ZoneId/of (:time-zone opts))
    :weeks           (:weeks opts)
    :event-duration  (:default-duration opts)
-   :include-all-day (boolean (:include-all-day opts))
+   :all-day         (boolean (:all-day opts))
    :done-keywords   done-keywords})
 
 (defn- zdt [d t tz] (java.time.ZonedDateTime/of d t tz))
@@ -1266,13 +1266,13 @@ li > p { margin-top: 0.5em; }
 (defn- busy-events
   "Busy intervals from SCHEDULED and DEADLINE timestamps within the window.
    Entries in a DONE state are always skipped. All-day entries are skipped by
-   default (free/busy convention); they only contribute when :include-all-day
-   is set on cfg."
+   default (free/busy convention); they only contribute when :all-day is set
+   on cfg."
   [ast cfg win-s win-e]
   (->> (organ/active-timestamps ast)
        (filter #(#{:scheduled :deadline} (:origin %)))
        (remove #(done-item? % (:done-keywords cfg)))
-       (filter #(or (:include-all-day cfg) (not (:all-day %))))
+       (filter #(or (:all-day cfg) (not (:all-day %))))
        (mapcat #(entry->intervals % (:event-duration cfg) (:tz cfg) win-s win-e))))
 
 (defn- sort-intervals [ivs]
@@ -1531,8 +1531,8 @@ li > p { margin-top: 0.5em; }
    ["-f" "--format FORMAT" "Output format: json, edn, yaml, md, html, org, ics, or ics-anon"
     :default "json" :validate [#{"json" "edn" "yaml" "md" "html" "org" "ics" "ics-anon"} "Must be: json, edn, yaml, md, html, org, ics, ics-anon"]]
    ["-h" "--help" "Show help"]
-   ["-i" "--id REGEX" "Filter: ID or CUSTOM_ID matches" :parse-fn re-pattern]
-   [nil "--section-id REGEX" "Filter: ancestor ID or CUSTOM_ID matches" :parse-fn re-pattern]
+   ["-i" "--id REGEX" "Filter: section's own ID or CUSTOM_ID matches" :parse-fn re-pattern]
+   ["-I" "--under-id REGEX" "Filter: any ancestor's ID or CUSTOM_ID matches (keeps the whole subtree under that ancestor)" :parse-fn re-pattern]
    ["-l" "--level-limit LEVEL" "Filter: level <= LEVEL"
     :parse-fn #(Integer/parseInt %) :validate [pos? "Must be positive"]]
    ["-L" "--level-limit-inclusive LEVEL" "Filter: level <= LEVEL and render deeper headings as bold"
@@ -1541,19 +1541,19 @@ li > p { margin-top: 0.5em; }
    ["-r" "--render FORMAT" "Content rendering format in AST output: md, html, or org"
     :default "md" :validate [#{"md" "html" "org"} "Must be: md, html, org"]]
    ["-s" "--stats" "Compute and display document statistics"]
-   ["-t" "--title REGEX" "Filter: section title matches" :parse-fn re-pattern]
-   ["-T" "--section-title REGEX" "Filter: ancestor title matches" :parse-fn re-pattern]
+   ["-t" "--title REGEX" "Filter: section's own title matches" :parse-fn re-pattern]
+   ["-T" "--under-title REGEX" "Filter: any ancestor's title matches (keeps the whole subtree under that ancestor)" :parse-fn re-pattern]
    ;; Cross-format DONE handling
-   ["-d" "--done-keywords KW,KW" "Comma-separated extra DONE keywords (e.g. CANX,CANCELED); merged with DONE and any #+TODO: directives in the file"
+   [nil "--done-keywords KW,KW" "Comma-separated extra DONE keywords (e.g. CANX,CANCELED); merged with DONE and any #+TODO: directives in the file"
     :parse-fn #(into #{} (remove str/blank? (map str/trim (str/split % #","))))]
    ["-k" "--keep-done" "Keep subtrees whose heading is in a DONE state (by default they're stripped from every output)"]
    ;; Tuning for the ics-anon format
+   ["-a" "--all-day" "ics-anon: also emit all-day SCHEDULED/DEADLINE as busy (off by default)"]
+   ["-d" "--default-duration N" "ics-anon: default minutes for events without an end time (default 60)"
+    :default 60 :parse-fn #(Integer/parseInt %) :validate [pos? "Must be positive"]]
    ["-w" "--weeks N" "ics-anon: weeks ahead to scan (default 4)"
     :default 4 :parse-fn #(Integer/parseInt %) :validate [pos? "Must be positive"]]
-   ["-D" "--default-duration N" "ics-anon: default minutes for events without an end time (default 60)"
-    :default 60 :parse-fn #(Integer/parseInt %) :validate [pos? "Must be positive"]]
-   ["-Z" "--time-zone ZONE" "ics-anon: timezone (default Europe/Paris)" :default "Europe/Paris"]
-   ["-I" "--include-all-day" "ics-anon: also emit all-day SCHEDULED/DEADLINE as busy (off by default)"]])
+   ["-z" "--time-zone ZONE" "ics-anon: timezone (default Europe/Paris)" :default "Europe/Paris"]])
 
 (defn- usage [summary]
   (str/join \newline
@@ -1607,8 +1607,8 @@ li > p { margin-top: 0.5em; }
                                  :level-limit-inclusive (:level-limit-inclusive options)
                                  :title-pattern         (:title options)
                                  :id-pattern            (:id options)
-                                 :section-title-pattern (:section-title options)
-                                 :section-id-pattern    (:section-id options)}
+                                 :section-title-pattern (:under-title options)
+                                 :section-id-pattern    (:under-id options)}
                   filtered-ast  (cond-> (organ/filter-ast ast filter-opts)
                                   (not (:keep-done options))
                                   (prune-done-sections done-keywords))
