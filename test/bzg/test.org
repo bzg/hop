@@ -116,3 +116,6 @@ Paragraph referencing another footnote[fn:2].
 
 * Daily standup
   SCHEDULED: <2025-06-01 Sun 09:00 +1d>
+
+* DONE Rendez-vous déjà passé
+  SCHEDULED: <2025-02-14 Fri 09:00>

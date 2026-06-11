@@ -1045,11 +1045,42 @@ li > p { margin-top: 0.5em; }
         {:dtstart (to-ics start) :dtend (to-ics end)})
       {:dtstart (to-ics iso)})))
 
+(defn- parse-done-keywords
+  "Extract DONE keywords from #+TODO:/#+SEQ_TODO:/#+TYP_TODO: directives.
+   With a `|` separator, words after the bar are DONE states. Without a
+   separator, only the last word is DONE (Org convention). The default
+   keyword \"DONE\" is always included."
+  [org-content]
+  (let [pattern #"(?im)^\s*#\+(?:TODO|SEQ_TODO|TYP_TODO):\s*(.*)$"
+        clean   (fn [w] (str/replace w #"\(.*\)$" ""))
+        words   (fn [s] (->> (str/split (str/trim s) #"\s+")
+                             (map clean)
+                             (remove str/blank?)))]
+    (into #{"DONE"}
+          (mapcat
+           (fn [[_ rhs]]
+             (if (str/includes? rhs "|")
+               (-> rhs (str/split #"\|" 2) second words)
+               (some-> (last (words rhs)) vector)))
+           (re-seq pattern org-content)))))
+
+(defn- done-item?
+  "True if the entry's heading is in a DONE state. Catches both organ-parsed
+   keywords (:todo set) and titles whose first word is a custom DONE keyword
+   organ did not recognise (regex is hardcoded to TODO|DONE)."
+  [{:keys [todo title]} done-keywords]
+  (or (and todo (contains? done-keywords (name todo)))
+      (and (string? title)
+           (let [first-word (first (str/split (str/trim title) #"\s+" 2))]
+             (contains? done-keywords first-word)))))
+
 (defn- collect-ics-items
   "Collect SCHEDULED -> VEVENT and DEADLINE+TODO -> VTODO items, using organ's
-   active-timestamps accessor (inline timestamps are not exported)."
-  [ast]
+   active-timestamps accessor (inline timestamps are not exported). Entries
+   whose heading is in a DONE state are skipped."
+  [ast done-keywords]
   (->> (organ/active-timestamps ast)
+       (remove #(done-item? % done-keywords))
        (keep (fn [{:keys [origin value repeater title todo]}]
                (case origin
                  :scheduled {:ics-type  :vevent :title    title :todo todo
@@ -1089,9 +1120,10 @@ li > p { margin-top: 0.5em; }
       (.format (java.time.format.DateTimeFormatter/ofPattern "yyyyMMdd"))))
 
 (defn- render-ast-as-ics
-  "Export scheduled items as VEVENT and deadline+TODO items as VTODO."
-  [ast]
-  (let [items (collect-ics-items ast)
+  "Export scheduled items as VEVENT and deadline+TODO items as VTODO.
+   Entries in a DONE state (per the document's TODO keyword set) are skipped."
+  [ast done-keywords]
+  (let [items (collect-ics-items ast done-keywords)
         now   (let [fmt (-> (java.time.format.DateTimeFormatter/ofPattern "yyyyMMdd'T'HHmmss'Z'")
                             (.withZone (java.time.ZoneId/of "UTC")))]
                 (.format fmt (java.time.Instant/now)))
@@ -1162,11 +1194,12 @@ li > p { margin-top: 0.5em; }
 
 (defn- busy-config
   "Build the busy-mode config map from parsed CLI options."
-  [opts]
+  [opts done-keywords]
   {:tz              (java.time.ZoneId/of (:tz opts))
    :weeks           (:weeks opts)
    :event-duration  (:event-duration opts)
-   :include-all-day (boolean (:include-all-day opts))})
+   :include-all-day (boolean (:include-all-day opts))
+   :done-keywords   done-keywords})
 
 (defn- zdt [d t tz] (java.time.ZonedDateTime/of d t tz))
 (defn- ldt->zdt [ldt tz] (java.time.ZonedDateTime/of ldt tz))
@@ -1215,11 +1248,13 @@ li > p { margin-top: 0.5em; }
 
 (defn- busy-events
   "Busy intervals from SCHEDULED and DEADLINE timestamps within the window.
-   All-day entries are skipped by default (free/busy convention); they only
-   contribute when :include-all-day is set on cfg."
+   Entries in a DONE state are always skipped. All-day entries are skipped by
+   default (free/busy convention); they only contribute when :include-all-day
+   is set on cfg."
   [ast cfg win-s win-e]
   (->> (organ/active-timestamps ast)
        (filter #(#{:scheduled :deadline} (:origin %)))
+       (remove #(done-item? % (:done-keywords cfg)))
        (filter #(or (:include-all-day cfg) (not (:all-day %))))
        (mapcat #(entry->intervals % (:event-duration cfg) (:tz cfg) win-s win-e))))
 
@@ -1267,8 +1302,8 @@ li > p { margin-top: 0.5em; }
 
 (defn- render-ast-as-busy-ics
   "Render the AST as anonymised \"Busy\" blocks (merged SCHEDULED/DEADLINE, today over the window)."
-  [ast opts]
-  (let [cfg    (busy-config opts)
+  [ast opts done-keywords]
+  (let [cfg    (busy-config opts done-keywords)
         tz     (:tz cfg)
         today  (java.time.LocalDate/now tz)
         end    (.plusWeeks today (:weeks cfg))
@@ -1545,6 +1580,7 @@ li > p { margin-top: 0.5em; }
                                   (resolve-css-theme v))]
             (let [unwrap?       (not (:no-unwrap options))
                   ast           (organ/parse-org org-content {:unwrap? unwrap?})
+                  done-keywords (parse-done-keywords org-content)
                   filter-opts   {:level-limit           (:level-limit options)
                                  :level-limit-inclusive (:level-limit-inclusive options)
                                  :title-pattern         (:title options)
@@ -1576,11 +1612,11 @@ li > p { margin-top: 0.5em; }
                 (println (render-ast-as-org cleaned-ast))
 
                 (= output-format "ics")
-                (do (print (render-ast-as-ics filtered-ast))
+                (do (print (render-ast-as-ics filtered-ast done-keywords))
                     (flush))
 
                 (= output-format "ics-anon")
-                (do (print (render-ast-as-busy-ics filtered-ast options))
+                (do (print (render-ast-as-busy-ics filtered-ast options done-keywords))
                     (flush))
 
                 :else
