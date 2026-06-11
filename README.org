@@ -24,11 +24,17 @@ anonymised "Busy" blocks (no title or detail), merged and bounded to a forward
 window. Tune it with:
 
 : hop -f ics-anon -w 8 notes.org              # scan 8 weeks ahead (default 4)
-: hop -f ics-anon --tz America/Montreal notes.org
+: hop -f ics-anon -Z America/Montreal notes.org
 
-- =-w/--weeks=     weeks ahead to scan (default 4)
-- =-d/--event-duration=  duration for events with no end time (default 60)
-- =--tz=           timezone for the output (default Europe/Paris)
+- =-w/--weeks=             weeks ahead to scan (default 4)
+- =-D/--default-duration=  duration for events with no end time, in minutes (default 60)
+- =-Z/--time-zone=         timezone for the output (default Europe/Paris)
+- =-I/--include-all-day=   also emit all-day SCHEDULED/DEADLINE as busy
+
+Cross-format options for DONE handling:
+
+- =-d/--done-keywords=     extra DONE keywords, comma-separated (e.g. =CANX,CANCELED=)
+- =-k/--keep-done=         keep DONE subtrees (by default they're stripped from every output)
 
 Render AST content in a different format:
 

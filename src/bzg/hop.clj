@@ -1212,9 +1212,9 @@ li > p { margin-top: 0.5em; }
 (defn- busy-config
   "Build the busy-mode config map from parsed CLI options."
   [opts done-keywords]
-  {:tz              (java.time.ZoneId/of (:tz opts))
+  {:tz              (java.time.ZoneId/of (:time-zone opts))
    :weeks           (:weeks opts)
-   :event-duration  (:event-duration opts)
+   :event-duration  (:default-duration opts)
    :include-all-day (boolean (:include-all-day opts))
    :done-keywords   done-keywords})
 
@@ -1532,7 +1532,7 @@ li > p { margin-top: 0.5em; }
     :default "json" :validate [#{"json" "edn" "yaml" "md" "html" "org" "ics" "ics-anon"} "Must be: json, edn, yaml, md, html, org, ics, ics-anon"]]
    ["-h" "--help" "Show help"]
    ["-i" "--id REGEX" "Filter: ID or CUSTOM_ID matches" :parse-fn re-pattern]
-   ["-I" "--section-id REGEX" "Filter: ancestor ID or CUSTOM_ID matches" :parse-fn re-pattern]
+   [nil "--section-id REGEX" "Filter: ancestor ID or CUSTOM_ID matches" :parse-fn re-pattern]
    ["-l" "--level-limit LEVEL" "Filter: level <= LEVEL"
     :parse-fn #(Integer/parseInt %) :validate [pos? "Must be positive"]]
    ["-L" "--level-limit-inclusive LEVEL" "Filter: level <= LEVEL and render deeper headings as bold"
@@ -1543,16 +1543,17 @@ li > p { margin-top: 0.5em; }
    ["-s" "--stats" "Compute and display document statistics"]
    ["-t" "--title REGEX" "Filter: section title matches" :parse-fn re-pattern]
    ["-T" "--section-title REGEX" "Filter: ancestor title matches" :parse-fn re-pattern]
+   ;; Cross-format DONE handling
+   ["-d" "--done-keywords KW,KW" "Comma-separated extra DONE keywords (e.g. CANX,CANCELED); merged with DONE and any #+TODO: directives in the file"
+    :parse-fn #(into #{} (remove str/blank? (map str/trim (str/split % #","))))]
+   ["-k" "--keep-done" "Keep subtrees whose heading is in a DONE state (by default they're stripped from every output)"]
    ;; Tuning for the ics-anon format
    ["-w" "--weeks N" "ics-anon: weeks ahead to scan (default 4)"
     :default 4 :parse-fn #(Integer/parseInt %) :validate [pos? "Must be positive"]]
-   ["-d" "--event-duration N" "ics-anon: default minutes for events without an end time (default 60)"
+   ["-D" "--default-duration N" "ics-anon: default minutes for events without an end time (default 60)"
     :default 60 :parse-fn #(Integer/parseInt %) :validate [pos? "Must be positive"]]
-   [nil "--tz ZONE" "ics-anon: timezone (default Europe/Paris)" :default "Europe/Paris"]
-   [nil "--include-all-day" "ics-anon: also emit all-day SCHEDULED/DEADLINE as busy (off by default)"]
-   [nil "--done-keywords KW,KW" "Comma-separated extra DONE keywords (e.g. CANX,CANCELED); merged with DONE and any #+TODO: directives in the file"
-    :parse-fn #(into #{} (remove str/blank? (map str/trim (str/split % #","))))]
-   [nil "--keep-done" "Keep subtrees whose heading is in a DONE state (by default they're stripped from every output)"]])
+   ["-Z" "--time-zone ZONE" "ics-anon: timezone (default Europe/Paris)" :default "Europe/Paris"]
+   ["-I" "--include-all-day" "ics-anon: also emit all-day SCHEDULED/DEADLINE as busy (off by default)"]])
 
 (defn- usage [summary]
   (str/join \newline
