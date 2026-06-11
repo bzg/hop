@@ -1544,7 +1544,7 @@ li > p { margin-top: 0.5em; }
    ["-t" "--title REGEX" "Filter: section's own title matches" :parse-fn re-pattern]
    ["-T" "--under-title REGEX" "Filter: any ancestor's title matches (keeps the whole subtree under that ancestor)" :parse-fn re-pattern]
    ;; Cross-format DONE handling
-   [nil "--done-keywords KW,KW" "Comma-separated extra DONE keywords (e.g. CANX,CANCELED); merged with DONE and any #+TODO: directives in the file"
+   ["-D" "--done-keywords KW,KW" "Comma-separated extra DONE keywords (e.g. CANX,CANCELED); merged with DONE and any #+TODO: directives in the file"
     :parse-fn #(into #{} (remove str/blank? (map str/trim (str/split % #","))))]
    ["-k" "--keep-done" "Keep subtrees whose heading is in a DONE state (by default they're stripped from every output)"]
    ;; Tuning for the ics-anon format
