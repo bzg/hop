@@ -33,7 +33,7 @@ window. Tune it with:
 
 Cross-format options for DONE handling:
 
-- =-d/--done-keywords=     extra DONE keywords, comma-separated (e.g. =CANX,CANCELED=)
+- =-D/--done-keywords=     extra DONE keywords, comma-separated (e.g. =CANX,CANCELED=)
 - =-k/--keep-done=         keep DONE subtrees (by default they're stripped from every output)
 
 Render AST content in a different format:

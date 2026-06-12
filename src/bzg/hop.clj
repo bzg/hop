@@ -1204,7 +1204,7 @@ li > p { margin-top: 0.5em; }
 ;; -- the classic free/busy view. All-day timestamps are skipped by default
 ;; since they don't block time the way a meeting does (use --all-day
 ;; to opt back in). Strictly overlapping intervals are merged; touching
-;; boundaries stay distinct. The `--tz` option only controls how org
+;; boundaries stay distinct. The `--time-zone` option only controls how org
 ;; timestamps are anchored; the emitted datetimes are normalised to UTC (Z
 ;; suffix) so no VTIMEZONE is needed. The plain `ics` format, by contrast,
 ;; mirrors the org timestamps verbatim as floating times.
