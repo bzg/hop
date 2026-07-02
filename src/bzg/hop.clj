@@ -30,8 +30,7 @@
 (def ^:private pico-themes-cdn "https://cdn.jsdelivr.net/gh/bzg/pico-themes@latest/")
 
 ;; Inline Node Rendering
-;; Organ 0.2.0 provides parsed inline nodes. These functions render them
-;; to HTML, Markdown, or Org format strings.
+;; Render organ's parsed inline nodes to HTML, Markdown or Org strings.
 
 (defn- escape-html [text]
   (str/escape (str text) {\& "&amp;" \< "&lt;" \> "&gt;" \" "&quot;"}))
@@ -39,7 +38,7 @@
 (defn- upper-name [k] (str/upper-case (name k)))
 
 (defn- repeat-str
-  "Repeat string s exactly n times. Returns empty string when n <= 0."
+  "Repeat s n times (empty string when n <= 0)."
   [n s]
   (str/join (repeat n s)))
 
@@ -90,7 +89,7 @@
     path))
 
 (defn- file-to-base64
-  "Read a file and return its base64-encoded content, or nil if file doesn't exist."
+  "Base64-encode a file's content, or nil if unreadable."
   [filepath]
   (try
     (let [file (java.io.File. (expand-home filepath))]
@@ -107,8 +106,7 @@
       (str "data:" mime ";base64," b64))))
 
 (defn- build-img-attrs
-  "Build HTML attribute string from a map of attributes.
-   Handles :alt, :title, :width, :height, :class, :id, :style, etc."
+  "Build an HTML attribute string from a map of attributes."
   [attrs]
   (when (seq attrs)
     (->> attrs
@@ -118,19 +116,13 @@
          (str/join))))
 
 (defn- render-image-html
-  "Render an image tag with optional affiliated attributes.
-   src: the image URL or data URI
-   default-alt: fallback alt text if not specified in attrs
-   affiliated: the affiliated keywords map (may contain :caption, :attr {:html {...}})"
+  "Render an <img> tag merging #+attr_html attributes; default-alt is used
+   when attrs provide no :alt. A :caption wraps the tag in a <figure>."
   [src default-alt affiliated]
   (let [html-attrs (get-in affiliated [:attr :html] {})
-        ;; Use alt from #+attr_html if provided, otherwise default
         alt        (or (:alt html-attrs) default-alt)
-        ;; Build the img tag with all HTML attributes
-        img-attrs  (merge {:src src :alt alt}
-                         (dissoc html-attrs :alt)) ; alt already handled
+        img-attrs  (merge {:src src :alt alt} (dissoc html-attrs :alt))
         img-tag    (str "<img" (build-img-attrs img-attrs) ">")
-        ;; Wrap in figure with figcaption if caption is present
         caption    (:caption affiliated)]
     (if caption
       (str "<figure>" img-tag "<figcaption>"
@@ -138,8 +130,7 @@
       img-tag)))
 
 (defn- heading-to-slug
-  "Convert a heading title to a URL-safe slug for anchor links.
-   Accepts both a string or a vector of inline nodes."
+  "URL-safe anchor slug from a heading title (string or inline nodes)."
   [title]
   (let [text (if (string? title) title (or (inline-text title) ""))
         slug (-> text
@@ -226,8 +217,7 @@
     (or (:value node) "")))
 
 (defn- render-inline
-  "Render a vector of inline nodes to a string in the given format.
-   If given a string (fallback), escapes for HTML or returns as-is."
+  "Render inline nodes (or a fallback string) to a string in fmt."
   [nodes fmt]
   (cond
     (nil? nodes)    ""
@@ -239,8 +229,7 @@
             (.toString sb))))
 
 (defn- extract-single-image-node
-  "If an inline node vector contains exactly one link node that is an image,
-   return that node. Otherwise nil."
+  "Return the single inline node when it is an image link, else nil."
   [nodes]
   (when (and (sequential? nodes)
              (= 1 (count nodes))
@@ -251,8 +240,8 @@
       (when (image-url? actual-url) node))))
 
 (defn- render-link-node
-  "Render a :link inline node. Optionally accepts affiliated keywords for
-   enhanced image rendering (e.g., paragraphs with #+CAPTION)."
+  "Render a :link inline node; affiliated keywords (e.g. #+CAPTION)
+   enable enhanced image rendering."
   [node fmt affiliated]
   (let [link-type     (:link-type node)
         target        (:target node)
@@ -490,9 +479,8 @@ li > p { margin-top: 0.5em; }
 
 ;; #+OPTIONS parsing
 (defn- parse-options-string
-  "Parse an #+OPTIONS: value string like 'toc:t H:2 num:t' into a map.
-   Values 't' become true, 'nil' become false, integers are parsed,
-   other values remain as strings."
+  "Parse an #+OPTIONS: value like 'toc:t H:2 num:t' into a map
+   ('t' -> true, 'nil' -> false, integers parsed, else string)."
   [s]
   (when (and s (not (str/blank? s)))
     (into {}
@@ -938,9 +926,8 @@ li > p { margin-top: 0.5em; }
 
 ;; Section ID assignment (deduplication)
 (defn- assign-section-ids
-  "Walk the AST and assign a unique :section-id to each :section node.
-   Uses custom_id when available, otherwise derives from heading slug.
-   Appends -1, -2, etc. to disambiguate duplicate IDs."
+  "Assign a unique :section-id to each :section node (custom_id when
+   available, else the heading slug; duplicates get -1, -2, ... suffixes)."
   [ast]
   (let [used (atom {})]
     (letfn [(unique-id [base]
@@ -963,9 +950,8 @@ li > p { margin-top: 0.5em; }
 
 ;; Section numbering
 (defn- number-sections
-  "Walk the AST and annotate each :section node with a :section-number string
-   (e.g. '1', '1.1', '2.3.1') based on its level and position among siblings.
-   Only applied when the document has num:t in #+OPTIONS (default: false)."
+  "Annotate each :section node with a :section-number string ('1', '1.1',
+   ...). Only applied when the document has num:t in #+OPTIONS."
   [ast]
   (let [options (or (:parsed-options ast) (get-export-options ast))
         num?    (get options :num false)]
@@ -982,10 +968,8 @@ li > p { margin-top: 0.5em; }
                             ;; Increment counter at this level, reset deeper levels
                             incremented    (update counters level (fnil inc 0))
                             updated        (apply dissoc incremented (filter #(> % level) (keys incremented)))
-                            ;; Build section number string from level 1 to current level
                             sec-num        (str/join "." (map #(get updated % 1)
                                                        (range 1 (inc level))))
-                            ;; Recursively number children of this section
                             numbered-kids  (number-children (:children child) updated)
                             numbered-child (assoc child
                                                   :section-number sec-num
@@ -1028,9 +1012,9 @@ li > p { margin-top: 0.5em; }
   (str/escape s {\\ "\\\\" \, "\\," \; "\\;" \newline "\\n"}))
 
 (defn- iso-to-ics-datetime
-  "Convert ISO timestamp (2025-01-15T10:30) to ICS datetime (20250115T103000).
-   For intervals (2025-01-15T10:30/2025-01-15T12:00), returns [dtstart dtend].
-   For date-only (2025-01-15), returns VALUE=DATE format (20250115)."
+  "Convert an ISO timestamp (2025-01-15T10:30) to a map of ICS datetimes:
+   {:dtstart \"20250115T103000\"}, plus :dtend for intervals (start/end).
+   Date-only input stays in VALUE=DATE form (20250115)."
   [iso]
   (let [to-ics (fn [s]
                  (if (str/includes? s "T")
@@ -1077,9 +1061,8 @@ li > p { margin-top: 0.5em; }
                  (contains? done-keywords first-word))))))
 
 (defn- prune-done-sections
-  "Walk the AST and remove every section subtree whose heading is in a DONE
-   state (heading + all descendants dropped). Non-section nodes are kept and
-   their :children recursed into."
+  "Remove every section subtree (heading + descendants) whose heading is
+   in a DONE state."
   [node done-keywords]
   (cond
     (and (map? node) (= :section (:type node))
@@ -1093,11 +1076,10 @@ li > p { margin-top: 0.5em; }
 
 (defn- collect-ics-items
   "Collect SCHEDULED -> VEVENT and DEADLINE+TODO -> VTODO items, using organ's
-   active-timestamps accessor (inline timestamps are not exported). Entries
-   whose heading is in a DONE state are skipped."
-  [ast done-keywords]
+   active-timestamps accessor (inline timestamps are not exported). DONE
+   entries are pruned upstream unless --keep-done."
+  [ast]
   (->> (organ/active-timestamps ast)
-       (remove #(done-item? % done-keywords))
        (keep (fn [{:keys [origin value repeater title todo]}]
                (case origin
                  :scheduled {:ics-type  :vevent :title    title :todo todo
@@ -1138,9 +1120,9 @@ li > p { margin-top: 0.5em; }
 
 (defn- render-ast-as-ics
   "Export scheduled items as VEVENT and deadline+TODO items as VTODO.
-   Entries in a DONE state (per the document's TODO keyword set) are skipped."
+   With --keep-done, DONE deadlines yield VTODOs with STATUS:COMPLETED."
   [ast done-keywords]
-  (let [items (collect-ics-items ast done-keywords)
+  (let [items (collect-ics-items ast)
         now   (let [fmt (-> (java.time.format.DateTimeFormatter/ofPattern "yyyyMMdd'T'HHmmss'Z'")
                             (.withZone (java.time.ZoneId/of "UTC")))]
                 (.format fmt (java.time.Instant/now)))
@@ -1185,7 +1167,8 @@ li > p { margin-top: 0.5em; }
                             [(str "DUE:" dtstart)])
                           (when rrule [rrule])
                           [(ics-fold-line (str "SUMMARY:" (ics-escape summary)))
-                           (str "STATUS:" (if (= todo :DONE) "COMPLETED" "NEEDS-ACTION"))
+                           (str "STATUS:" (if (contains? done-keywords (name todo))
+                                            "COMPLETED" "NEEDS-ACTION"))
                            "END:VTODO"])))))
          items)]
     (str (str/join "\r\n"
@@ -1199,15 +1182,12 @@ li > p { margin-top: 0.5em; }
 
 ;; ICS anonymised (free/busy) export -- the `ics-anon` format
 ;; ---------------------------------------------------------------------------
-;; The `ics-anon` format re-emits SCHEDULED and DEADLINE timestamps as
-;; anonymised "Busy" blocks (no title or detail), bounded to a forward window
-;; -- the classic free/busy view. All-day timestamps are skipped by default
-;; since they don't block time the way a meeting does (use --all-day
-;; to opt back in). Strictly overlapping intervals are merged; touching
-;; boundaries stay distinct. The `--time-zone` option only controls how org
-;; timestamps are anchored; the emitted datetimes are normalised to UTC (Z
-;; suffix) so no VTIMEZONE is needed. The plain `ics` format, by contrast,
-;; mirrors the org timestamps verbatim as floating times.
+;; Re-emits SCHEDULED and DEADLINE timestamps as anonymised "Busy" blocks
+;; over a forward window. All-day timestamps are skipped unless --all-day.
+;; Strictly overlapping intervals are merged; touching boundaries stay
+;; distinct. --time-zone only anchors the org timestamps; output datetimes
+;; are normalised to UTC (Z suffix) so no VTIMEZONE is needed. The plain
+;; `ics` format, by contrast, mirrors the org timestamps as floating times.
 
 (defn- busy-config
   "Build the busy-mode config map from parsed CLI options."
@@ -1265,9 +1245,8 @@ li > p { margin-top: 0.5em; }
 
 (defn- busy-events
   "Busy intervals from SCHEDULED and DEADLINE timestamps within the window.
-   Entries in a DONE state are always skipped. All-day entries are skipped by
-   default (free/busy convention); they only contribute when :all-day is set
-   on cfg."
+   DONE entries are always skipped; all-day entries only count when
+   :all-day is set on cfg."
   [ast cfg win-s win-e]
   (->> (organ/active-timestamps ast)
        (filter #(#{:scheduled :deadline} (:origin %)))
@@ -1361,7 +1340,7 @@ li > p { margin-top: 0.5em; }
       0)))
 
 (defn- count-images
-  "Count image links in a vector of inline nodes (or string for backward compat)."
+  "Count image links in a vector of inline nodes (0 for strings)."
   [nodes]
   (if (sequential? nodes)
     (reduce (fn [n node]
@@ -1380,12 +1359,12 @@ li > p { margin-top: 0.5em; }
    :images (count-images (:content node))})
 
 (defn- inc-stat
-  "Increment a stat counter in a map, initializing to 0 if absent."
+  "Increment counter k in m (absent counts as 0)."
   [m k]
   (update m k (fnil inc 0)))
 
 (defn- add-stat
-  "Add n to a stat counter in a map, initializing to 0 if absent."
+  "Add n to counter k in m (absent counts as 0)."
   [m k n]
   (update m k (fnil + 0) n))
 
@@ -1476,7 +1455,7 @@ li > p { margin-top: 0.5em; }
    :closed           "Closed"})
 
 (defn format-stats
-  "Format statistics for display."
+  "Format stats as aligned 'Label: value' lines."
   [stats]
   (let [max-label-len (->> (keys stats)
                            (map #(count (get stats-label-map % (name %))))
@@ -1497,7 +1476,7 @@ li > p { margin-top: 0.5em; }
   2. file:/// URL → {:inline content} (reads local file);
      if the path has no .css extension, treat as pico-theme name
   3. .css filename matching a local file → {:inline content};
-     if the file doesn't exist, return nil (no CDN fall-back)
+     if the file doesn't exist, throw (no CDN fall-back)
   4. bare name (no spaces) → pico-themes CDN {:link url}"
   [v]
   (cond
