@@ -151,11 +151,12 @@
     href))
 
 (defn- resolve-link-href
-  "Resolve a link node to a URL string given its fields."
-  [{:keys [link-type target url]}]
+  "Resolve a link node to a URL string. file: links get .org -> .html
+   for html/md output; org output keeps the raw link verbatim."
+  [{:keys [link-type target url]} fmt]
   (prepend-base-url
    (case link-type
-     :file        (str/replace target #"\.org$" ".html")
+     :file        (if (= fmt :org) url (str/replace target #"\.org$" ".html"))
      (:id
       :custom-id) (str "#" target)
      :heading     (str "#" (heading-to-slug target))
@@ -255,22 +256,21 @@
         url-is-image  (image-url? actual-url)
         desc-is-image (and desc-text (image-url? desc-text))]
     (cond
-      ;; Local file images: convert to base64 data URI
-      (and is-local-file url-is-image)
-      (if-let [data-uri (image-to-data-uri (or target url))]
-        (cond
-          (= fmt :html)
+      ;; Local file images: html/md get a base64 data URI, falling back to
+      ;; the raw path when the file is unreadable. Org output falls through
+      ;; to the generic branch and keeps the link verbatim.
+      (and is-local-file url-is-image (#{:html :md} fmt))
+      (let [path (or target url)
+            src  (or (image-to-data-uri path) path)]
+        (if (= fmt :html)
           (if affiliated
-            (render-image-html data-uri (or desc-text target) affiliated)
+            (render-image-html src (or desc-text target) affiliated)
             (if desc-is-image
-              (str "<a href=\"" data-uri "\"><img src=\""
+              (str "<a href=\"" (escape-html src) "\"><img src=\""
                    (escape-html desc-text) "\" alt=\"" (escape-html desc-text) "\"></a>")
-              (str "<img src=\"" data-uri "\" alt=\""
+              (str "<img src=\"" (escape-html src) "\" alt=\""
                    (escape-html (or desc-text target)) "\">")))
-          (= fmt :md)
-          (str "![" (or desc-text target) "](" data-uri ")")
-          :else "")
-        "")
+          (str "![" (or desc-text target) "](" src ")")))
 
       ;; HTML format
       (= fmt :html)
@@ -292,7 +292,7 @@
              (escape-html desc-text) "\" alt=\"" (escape-html desc-text) "\"></a>")
 
         :else
-        (let [href    (escape-html (resolve-link-href node))
+        (let [href    (escape-html (resolve-link-href node :html))
               display (if has-desc
                         (render-inline children :html)
                         (escape-html (case link-type
@@ -310,7 +310,7 @@
         (str "[![" desc-text "](" desc-text ")](" url ")")
 
         :else
-        (let [href    (resolve-link-href node)
+        (let [href    (resolve-link-href node :md)
               display (if has-desc
                         (render-inline children :md)
                         (case link-type
@@ -320,7 +320,7 @@
 
       ;; Org format
       :else
-      (let [href    (resolve-link-href node)
+      (let [href    (resolve-link-href node :org)
             display (when has-desc (render-inline children :org))]
         (if display
           (str "[[" href "][" display "]]")
@@ -516,10 +516,20 @@ li > p { margin-top: 0.5em; }
    []
    children))
 
+(defn- normalize-toc-levels
+  "Clamp level jumps to +1 (a '*' heading followed by '***') so TOC
+   nesting stays well-formed."
+  [entries]
+  (loop [[e & more] entries prev 0 acc []]
+    (if (nil? e)
+      acc
+      (let [lvl (min (:level e) (inc prev))]
+        (recur more lvl (conj acc (assoc e :level lvl)))))))
+
 (defn- render-toc
   "Render a table of contents from TOC entries in the given format."
   [entries fmt]
-  (when (seq entries)
+  (when-let [entries (seq (normalize-toc-levels entries))]
     (case fmt
       :html (let [sb (StringBuilder.)
                   _  (.append sb "<nav id=\"table-of-contents\">\n<h2>Table of Contents</h2>\n")
@@ -1226,6 +1236,24 @@ li > p { margin-top: 0.5em; }
     :year  (.plusYears ldt k)
     nil))
 
+(def ^:private chrono-units
+  {:hour  java.time.temporal.ChronoUnit/HOURS
+   :day   java.time.temporal.ChronoUnit/DAYS
+   :week  java.time.temporal.ChronoUnit/WEEKS
+   :month java.time.temporal.ChronoUnit/MONTHS
+   :year  java.time.temporal.ChronoUnit/YEARS})
+
+(defn- first-repeat-offset
+  "Offset (in repeater units, multiple of n) of the first occurrence that may
+   reach a window starting at win-s-ldt; 0 when the series starts inside or
+   after the window. Computed analytically so decades-old repeaters don't
+   exhaust the occurrence guard before reaching the window."
+  [start-ldt end-ldt win-s-ldt n unit]
+  (let [cu       (get chrono-units unit)
+        duration (.between cu start-ldt end-ldt)
+        gap      (.between cu start-ldt win-s-ldt)]
+    (* n (max 0 (dec (quot (- gap duration) n))))))
+
 (defn- entry->intervals
   "Zoned [start end] intervals of an entry, expanded over the window by its repeater."
   [entry event-duration tz win-s win-e]
@@ -1233,12 +1261,13 @@ li > p { margin-top: 0.5em; }
         {:keys [n unit]}    (:repeater entry)
         in-window?          (fn [zs ze] (and (.isBefore zs win-e) (.isAfter ze win-s)))]
     (if (and n unit (step-ldt start-ldt n unit))
-      (->> (iterate #(+ % n) 0)
-           (take 5000) ; safety guard
-           (map (fn [k] [(ldt->zdt (step-ldt start-ldt k unit) tz)
-                         (ldt->zdt (step-ldt end-ldt k unit) tz)]))
-           (take-while (fn [[zs _]] (.isBefore zs win-e)))
-           (filter (fn [[zs ze]] (in-window? zs ze))))
+      (let [k0 (first-repeat-offset start-ldt end-ldt (.toLocalDateTime win-s) n unit)]
+        (->> (iterate #(+ % n) k0)
+             (take 5000) ; safety guard
+             (map (fn [k] [(ldt->zdt (step-ldt start-ldt k unit) tz)
+                           (ldt->zdt (step-ldt end-ldt k unit) tz)]))
+             (take-while (fn [[zs _]] (.isBefore zs win-e)))
+             (filter (fn [[zs ze]] (in-window? zs ze)))))
       (let [zs (ldt->zdt start-ldt tz)
             ze (ldt->zdt end-ldt tz)]
         (when (in-window? zs ze) [[zs ze]])))))
@@ -1572,12 +1601,15 @@ li > p { margin-top: 0.5em; }
                           (slurp *in*)
                           (try (slurp file-path)
                                (catch java.io.FileNotFoundException _
-                                 (exit-error (str "File not found - " file-path)))))]
+                                 (exit-error (str "File not found - " file-path)))))
+            css-theme   (try (when-let [v (:css-theme options)]
+                               (resolve-css-theme v))
+                             (catch Exception e
+                               (exit-error (.getMessage e))))]
         (try
           (binding [*base-url*  (when-let [u (:base-url options)]
                                   (cond-> u (not (str/ends-with? u "/")) (str "/")))
-                    *css-theme* (when-let [v (:css-theme options)]
-                                  (resolve-css-theme v))]
+                    *css-theme* css-theme]
             (let [unwrap?       (not (:no-unwrap options))
                   ast           (organ/parse-org org-content {:unwrap? unwrap?})
                   done-keywords (into (parse-done-keywords org-content)
