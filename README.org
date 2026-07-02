@@ -30,6 +30,7 @@ window. Tune it with:
 - =-d/--default-duration=  duration for events with no end time, in minutes (default 60)
 - =-z/--time-zone=         timezone for the output (default Europe/Paris)
 - =-a/--all-day=           also emit all-day SCHEDULED/DEADLINE as busy
+- =--reference-date=       window start date, YYYY-MM-DD (default: today)
 
 Cross-format options for DONE handling:
 
