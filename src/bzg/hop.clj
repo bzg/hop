@@ -9,6 +9,8 @@
   (:require [clojure.string :as str]
             [cheshire.core :as json]
             [clojure.tools.cli :as cli]
+            [babashka.process :as process]
+            [clojure.edn :as edn]
             [clj-yaml.core :as yaml]
             [bzg.organ :as organ]))
 
@@ -1527,6 +1529,7 @@ li > p { margin-top: 0.5em; }
    ["-f" "--format FORMAT" "Output format: json, edn, yaml, md, html, org, ics, or ics-anon"
     :default "json" :validate [#{"json" "edn" "yaml" "md" "html" "org" "ics" "ics-anon"} "Must be: json, edn, yaml, md, html, org, ics, ics-anon"]]
    ["-h" "--help" "Show help"]
+   ["-v" "--version" "Show the hop version"]
    ["-i" "--id REGEX" "Filter: section's own ID or CUSTOM_ID matches" :parse-fn re-pattern]
    ["-I" "--under-id REGEX" "Filter: any ancestor's ID or CUSTOM_ID matches (keeps the whole subtree under that ancestor)" :parse-fn re-pattern]
    ["-l" "--level-limit LEVEL" "Filter: level <= LEVEL"
@@ -1553,6 +1556,19 @@ li > p { margin-top: 0.5em; }
    [nil "--reference-date DATE" "ics-anon: window start date, YYYY-MM-DD (default: today; useful for reproducible output)"
     :parse-fn #(java.time.LocalDate/parse %)]])
 
+(defn- bbin-version
+  "Version string read from bbin's install metadata (`bbin ls --edn`), or nil
+  when bbin is absent or hop was not installed through it."
+  []
+  (try
+    (let [{:keys [out exit]} (process/shell {:out :string :err :string :continue true}
+                                            "bbin" "ls" "--edn")]
+      (when (zero? exit)
+        (some (fn [e] (when (= 'io.github.bzg/hop (:lib e))
+                        (get-in e [:coords :git/tag])))
+              (vals (edn/read-string out)))))
+    (catch Exception _ nil)))
+
 (defn- usage [summary]
   (str/join \newline
             ["Hush Org Parser - Render and export Org files"
@@ -1576,6 +1592,9 @@ li > p { margin-top: 0.5em; }
 (defn -main [& args]
   (let [{:keys [options arguments errors summary]} (cli/parse-opts args cli-options)]
     (cond
+      (:version options)
+      (exit-ok (str "hop " (or (bbin-version) "(version unknown)")))
+
       (:help options)
       (exit-ok (usage summary))
 
