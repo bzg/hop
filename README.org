@@ -1,10 +1,13 @@
-#+title: Hop - Hush Org Parser
+#+title: Hop! Org Parser
 
 [[https://intver.org/][https://img.shields.io/badge/versioning-intver.org-blue.svg?style=for-the-badge]]
 
-[[file:hop.png]]
+: (\___/)
+: (='.'=)
+: (")_(")
 
-Hush Org Parser — render and export Org files to md/html/org/json/edn/yaml/ics.
+Hop! Org Parser -- quickly and easily render and export Org files to
+MD, HTML, Org, JSON, EDN, YAML and ICS.
 
 Built on [[https://github.com/bzg/organ][organ]], a Clojure Org parser.
 
