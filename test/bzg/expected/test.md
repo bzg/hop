@@ -17,8 +17,10 @@
 - [7 Fixed Width and Comments](#fixed-width-and-comments)
 - [8 Footnotes](#footnotes)
 - [9 Une tâche très longue avec des caractères accentués éàçùûñ pour vérifier le pliage RFC 5545 sur du texte UTF-8](#une-tâche-très-longue-avec-des-caractères-accentués-éàçùûñ-pour-vérifier-le-pliage-rfc-5545-sur-du-texte-utf-8)
-- [10 Réunion d'équipe](#réunion-déquipe)
-- [11 Daily standup](#daily-standup)
+- [10 Congé sans mot-clé TODO, journée bloquée](#congé-sans-mot-clé-todo-journée-bloquée)
+- [11 Rapport à rendre : échéance horodatée, VTODO mais jamais busy](#rapport-à-rendre-échéance-horodatée-vtodo-mais-jamais-busy)
+- [12 Réunion d'équipe](#réunion-déquipe)
+- [13 Daily standup](#daily-standup)
 
 Some top-level paragraph with **bold**, *italic*, _underline_, ~~strikethrough~~, `code`, and `verbatim` markup.
 
@@ -129,11 +131,19 @@ Paragraph referencing another footnote[^2].
 **DEADLINE:** 2025-04-20
 
 
-# 10 Réunion d'équipe `:meeting:`
+# 10 Congé sans mot-clé TODO, journée bloquée
+**SCHEDULED:** 2025-04-21
+
+
+# **TODO** 11 Rapport à rendre : échéance horodatée, VTODO mais jamais busy
+**DEADLINE:** 2025-04-22T16:00
+
+
+# 12 Réunion d'équipe `:meeting:`
 **SCHEDULED:** 2025-05-10T14:00/2025-05-10T16:00
 
 
-# 11 Daily standup
+# 13 Daily standup
 **SCHEDULED:** 2025-06-01T09:00 +1d
 
 

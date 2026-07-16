@@ -18,8 +18,8 @@ Built on [[https://github.com/bzg/organ][organ]], a Clojure Org parser.
 : hop -f org notes.org                        # Export as Org (unwrapped)
 : hop -f edn notes.org                        # Export as EDN
 : hop -f yaml notes.org                       # Export as YAML
-: hop -f ics notes.org                        # Export scheduled/deadline items as ICS
-: hop -f ics-anon notes.org                   # Same, anonymised as "Busy" free/busy blocks
+: hop -f ics notes.org                        # Export scheduled (VEVENT) and deadline (VTODO) items as ICS
+: hop -f ics-anon notes.org                   # Scheduled items only, anonymised as "Busy" free/busy blocks
 
 Render the AST /content/ in a different format:
 
@@ -50,14 +50,19 @@ ICS export options (=ics= and =ics-anon=):
 - =-R/--reference-date=    # window start date, YYYY-MM-DD (today when only -w is set)
 - =-d/--default-duration=  # minutes for events with no end time (only added when set)
 - =-z/--time-zone=         # timezone anchoring the Org timestamps (default: system timezone)
-- =-a/--all-day=           # also emit all-day SCHEDULED/DEADLINE (excluded by default)
+- =-a/--all-day=           # also emit all-day entries (excluded by default; see below for =ics-anon=)
 
-The =ics-anon= format re-emits =SCHEDULED= and =DEADLINE= timestamps as
-anonymised "Busy" blocks. Both formats emit UTC datetimes, anchored in
-the =-z= timezone. Without these options, both mirror the Org file: every
-timed timestamp, no synthetic end times, and repeaters kept as =RRULE=.
-A bounded window (=-w=) makes =ics-anon= expand repeaters into
-occurrences and merge overlapping blocks.
+For =ics= and =ics-anon=, =DEADLINE= timestamps are due dates (i.e.
+=VTODO=): they never count as "busy", since a due date reserves no
+time. =SCHEDULED= timestamps are =VEVENT=, anonymised as "Busy" blocks
+by =ics-anon=. When a =SCHEDULED= entry has a date but no time of day,
+=ics-anon= admits it as an all-day busy entry only with the =-a=
+(=--all-day=) option, and only when its heading bears no TODO keyword.
+
+Both formats emit UTC datetimes, anchored in the =-z= timezone.
+
+TODO keywords come from =#+TODO:=-style directives in the file (Org's
+=TODO=/=DONE= defaults otherwise), plus any =-D= extras.
 
 Other export options:
 
@@ -92,7 +97,7 @@ To run =hop= directly from the source without installing via =bbin=:
 
 This requires adding the =organ= dependency to =bb.edn=:
 
-: {:deps {org.clojars.bzg/organ {:mvn/version "1.0.0"}}}
+: {:deps {org.clojars.bzg/organ {:mvn/version "3.2.0"}}}
 
 * Test
 

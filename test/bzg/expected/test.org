@@ -15,8 +15,10 @@
 - 7 Fixed Width and Comments
 - 8 Footnotes
 - 9 Une tâche très longue avec des caractères accentués éàçùûñ pour vérifier le pliage RFC 5545 sur du texte UTF-8
-- 10 Réunion d'équipe
-- 11 Daily standup
+- 10 Congé sans mot-clé TODO, journée bloquée
+- 11 Rapport à rendre : échéance horodatée, VTODO mais jamais busy
+- 12 Réunion d'équipe
+- 13 Daily standup
 
 Some top-level paragraph with *bold*, /italic/, _underline_, +strikethrough+, ~code~, and =verbatim= markup.
 
@@ -124,9 +126,15 @@ Paragraph referencing another footnote[fn:2].
 * TODO 9 Une tâche très longue avec des caractères accentués éàçùûñ pour vérifier le pliage RFC 5545 sur du texte UTF-8
 DEADLINE: <2025-04-20>
 
-* 10 Réunion d'équipe :meeting:
+* 10 Congé sans mot-clé TODO, journée bloquée
+SCHEDULED: <2025-04-21>
+
+* TODO 11 Rapport à rendre : échéance horodatée, VTODO mais jamais busy
+DEADLINE: <2025-04-22 16:00>
+
+* 12 Réunion d'équipe :meeting:
 SCHEDULED: <2025-05-10 14:00-16:00>
 
-* 11 Daily standup
+* 13 Daily standup
 SCHEDULED: <2025-06-01 09:00 +1d>
 

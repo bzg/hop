@@ -1041,36 +1041,12 @@ li > p { margin-top: 0.5em; }
         {:dtstart (to-ics start) :dtend (to-ics end)})
       {:dtstart (to-ics iso)})))
 
-(defn- parse-done-keywords
-  "Extract DONE keywords from #+TODO:/#+SEQ_TODO:/#+TYP_TODO: directives.
-   With a `|` separator, words after the bar are DONE states. Without a
-   separator, only the last word is DONE (Org convention). The default
-   keyword \"DONE\" is always included."
-  [org-content]
-  (let [pattern #"(?im)^\s*#\+(?:TODO|SEQ_TODO|TYP_TODO):\s*(.*)$"
-        clean   (fn [w] (str/replace w #"\(.*\)$" ""))
-        words   (fn [s] (->> (str/split (str/trim s) #"\s+")
-                             (map clean)
-                             (remove str/blank?)))]
-    (into #{"DONE"}
-          (mapcat
-           (fn [[_ rhs]]
-             (if (str/includes? rhs "|")
-               (-> rhs (str/split #"\|" 2) second words)
-               (some-> (last (words rhs)) vector)))
-           (re-seq pattern org-content)))))
-
 (defn- done-item?
-  "True if the entry's heading is in a DONE state. Catches both organ-parsed
-   keywords (:todo set) and titles whose first word is a custom DONE keyword
-   organ did not recognise (regex is hardcoded to TODO|DONE)."
-  [{:keys [todo title]} done-keywords]
-  (or (and todo (contains? done-keywords (name todo)))
-      (let [s (cond (string? title)     title
-                    (sequential? title) (organ/inline-text title)
-                    :else               nil)]
-        (and s (let [first-word (first (str/split (str/trim s) #"\s+" 2))]
-                 (contains? done-keywords first-word))))))
+  "True if the entry's heading is in a DONE state. Custom keywords are
+   parsed by organ from #+TODO:-style directives in the file and from the
+   :todo-keywords parse option (fed by -D)."
+  [{:keys [todo]} done-keywords]
+  (and todo (contains? done-keywords (name todo))))
 
 (defn- prune-done-sections
   "Remove every section subtree (heading + descendants) whose heading is
@@ -1078,7 +1054,7 @@ li > p { margin-top: 0.5em; }
   [node done-keywords]
   (cond
     (and (map? node) (= :section (:type node))
-         (done-item? {:todo (:todo node) :title (:title node)} done-keywords))
+         (done-item? node done-keywords))
     nil
 
     (and (map? node) (vector? (:children node)))
@@ -1277,12 +1253,16 @@ li > p { margin-top: 0.5em; }
 
 ;; ICS anonymised (free/busy) export -- the `ics-anon` format
 ;; ---------------------------------------------------------------------------
-;; Re-emits SCHEDULED and DEADLINE timestamps as anonymised "Busy" blocks
+;; Re-emits SCHEDULED timestamps as anonymised "Busy" blocks — the VEVENT
+;; side of the plain `ics` format. DEADLINE timestamps are due dates (its
+;; VTODO side) and never count as busy.
 ;; With --weeks, repeaters are expanded over the bounded window and strictly
 ;; overlapping intervals are merged (touching boundaries stay distinct);
 ;; without it every timestamp yields one block and repeaters keep their
 ;; RRULE, like the plain `ics` format. All-day timestamps are skipped
-;; unless --all-day. --time-zone only anchors the org timestamps; output
+;; unless --all-day, which only admits those without a TODO keyword
+;; (e.g. a "Vacation" heading blocks its day; a task scheduled on a date
+;; does not). --time-zone only anchors the org timestamps; output
 ;; datetimes are normalised to UTC (Z suffix) so no VTIMEZONE is needed.
 ;; The plain `ics` format anchors and emits its datetimes the same way.
 
@@ -1347,13 +1327,18 @@ li > p { margin-top: 0.5em; }
         (when (in-window? zs ze) [[zs ze]])))))
 
 (defn- busy-entries
-  "SCHEDULED and DEADLINE timestamp entries eligible for busy output.
-   DONE entries are pruned upstream unless --keep-done; all-day entries
-   are skipped when :all-day is unset on cfg."
+  "SCHEDULED timestamp entries eligible for busy output — the VEVENT side
+   of the plain ics format. DEADLINE entries are due dates (the VTODO
+   side): they never reserve time, so they never count as busy. DONE
+   entries are pruned upstream unless --keep-done. All-day entries are
+   skipped by default; with --all-day, only those whose heading bears no
+   TODO keyword count as busy — a keyword marks a task parked on a date,
+   not a day-blocking event."
   [ast cfg]
   (->> (organ/active-timestamps ast)
-       (filter #(#{:scheduled :deadline} (:origin %)))
-       (filter #(or (:all-day cfg) (not (:all-day %))))))
+       (filter #(= :scheduled (:origin %)))
+       (filter #(or (not (:all-day %))
+                    (and (:all-day cfg) (not (:todo %)))))))
 
 (defn- sort-intervals [ivs]
   (sort-by #(.toInstant (first %)) ivs))
@@ -1646,7 +1631,7 @@ li > p { margin-top: 0.5em; }
     :parse-fn #(into #{} (remove str/blank? (map str/trim (str/split % #","))))]
    ["-k" "--keep-done" "Keep subtrees whose heading is in a DONE state (by default they're stripped from every output)"]
    ;; Tuning for the ics and ics-anon formats
-   ["-a" "--all-day" "also emit all-day SCHEDULED/DEADLINE (excluded by default)"]
+   ["-a" "--all-day" "also emit all-day SCHEDULED/DEADLINE (excluded by default; ics-anon only takes those without a TODO keyword)"]
    ["-d" "--default-duration N" "minutes for events without an end time (only added when set)"
     :parse-fn #(Integer/parseInt %) :validate [pos? "Must be positive"]]
    ["-w" "--weeks N" "weeks ahead to scan (unbounded unless set; a bounded window lets ics-anon expand and merge repeaters)"
@@ -1719,9 +1704,11 @@ li > p { margin-top: 0.5em; }
                                   (cond-> u (not (str/ends-with? u "/")) (str "/")))
                     *css-theme* css-theme]
             (let [unwrap?       (not (:no-unwrap options))
-                  ast           (organ/parse-org org-content {:unwrap? unwrap?})
-                  done-keywords (into (parse-done-keywords org-content)
-                                      (:done-keywords options))
+                  ast           (organ/parse-org
+                                 org-content
+                                 {:unwrap? unwrap?
+                                  :todo-keywords {:done (vec (:done-keywords options))}})
+                  done-keywords (set (:done (:todo-keywords ast)))
                   filter-opts   {:level-limit           (:level-limit options)
                                  :level-limit-inclusive (:level-limit-inclusive options)
                                  :title-pattern         (:title options)

@@ -111,6 +111,12 @@ Paragraph referencing another footnote[fn:2].
 * TODO Une tâche très longue avec des caractères accentués éàçùûñ pour vérifier le pliage RFC 5545 sur du texte UTF-8
   DEADLINE: <2025-04-20 Sun>
 
+* Congé sans mot-clé TODO, journée bloquée
+  SCHEDULED: <2025-04-21 Mon>
+
+* TODO Rapport à rendre : échéance horodatée, VTODO mais jamais busy
+  DEADLINE: <2025-04-22 Tue 16:00>
+
 * Réunion d'équipe                                                  :meeting:
   SCHEDULED: <2025-05-10 Sat 14:00-16:00>
 

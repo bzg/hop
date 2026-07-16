@@ -6,6 +6,10 @@
     "date" : "2025-01-15",
     "options" : "toc:t num:t H:3"
   },
+  "todo-keywords" : {
+    "todo" : [ "TODO" ],
+    "done" : [ "DONE" ]
+  },
   "children" : [ {
     "content" : "Some top-level paragraph with **bold**, *italic*, _underline_, ~~strikethrough~~, `code`, and `verbatim` markup.",
     "type" : "paragraph"
@@ -275,6 +279,27 @@
     "todo" : "TODO",
     "planning" : {
       "deadline" : "2025-04-20"
+    }
+  }, {
+    "path" : [ "Congé sans mot-clé TODO, journée bloquée" ],
+    "blank-lines-before" : 0,
+    "type" : "section",
+    "blank-lines-after-title" : 1,
+    "title" : "Congé sans mot-clé TODO, journée bloquée",
+    "level" : 1,
+    "planning" : {
+      "scheduled" : "2025-04-21"
+    }
+  }, {
+    "path" : [ "Rapport à rendre : échéance horodatée, VTODO mais jamais busy" ],
+    "blank-lines-before" : 0,
+    "type" : "section",
+    "blank-lines-after-title" : 1,
+    "title" : "Rapport à rendre : échéance horodatée, VTODO mais jamais busy",
+    "level" : 1,
+    "todo" : "TODO",
+    "planning" : {
+      "deadline" : "2025-04-22T16:00"
     }
   }, {
     "path" : [ "Réunion d'équipe" ],
