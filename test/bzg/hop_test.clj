@@ -9,8 +9,13 @@
 
 (def formats
   [["md" "md"] ["html" "html"] ["org" "org"]
-   ["json" "json"] ["edn" "edn"] ["yaml" "yaml"] ["ics" "ics"]
-   ["ics-anon" "anon.ics" ["--reference-date" "2025-03-01" "-w" "12" "-a"]]])
+   ["json" "json"] ["edn" "edn"] ["yaml" "yaml"]
+   ["ics" "ics" ["-z" "Europe/Paris"]]
+   ["ics" "windowed.ics" ["-R" "2025-03-01" "-w" "12"
+                          "-z" "Europe/Paris" "-d" "45" "-a"]]
+   ["ics-anon" "anon.ics" ["-R" "2025-03-01" "-w" "12"
+                           "-z" "Europe/Paris" "-d" "60" "-a"]]
+   ["ics-anon" "unbounded.anon.ics" ["-z" "Europe/Paris"]]])
 
 (defn- expected-file [ext] (str expected-dir "/test." ext))
 

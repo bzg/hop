@@ -6,8 +6,7 @@
 : (='.'=)
 : (")_(")
 
-Hop! Org Parser -- quickly and easily render and export Org files to
-MD, HTML, Org, JSON, EDN, YAML and ICS.
+Hop! Org Parser -- quickly and easily render and export Org files to MD, HTML, Org, JSON, EDN, YAML and ICS.
 
 Built on [[https://github.com/bzg/organ][organ]], a Clojure Org parser.
 
@@ -17,35 +16,17 @@ Built on [[https://github.com/bzg/organ][organ]], a Clojure Org parser.
 : hop -f html notes.org                       # Export as HTML
 : hop -f md notes.org                         # Export as Markdown
 : hop -f org notes.org                        # Export as Org (unwrapped)
-: hop -f edn notes.org                        # AST as EDN
-: hop -f yaml notes.org                       # AST as YAML
-: hop -f ics notes.org                        # Export scheduled items as ICS
+: hop -f edn notes.org                        # Export as EDN
+: hop -f yaml notes.org                       # Export as YAML
+: hop -f ics notes.org                        # Export scheduled/deadline items as ICS
 : hop -f ics-anon notes.org                   # Same, anonymised as "Busy" free/busy blocks
 
-The =ics-anon= format re-emits =SCHEDULED= and =DEADLINE= timestamps as
-anonymised "Busy" blocks (no title or detail), merged and bounded to a forward
-window. Tune it with:
-
-: hop -f ics-anon -w 8 notes.org              # scan 8 weeks ahead (default 4)
-: hop -f ics-anon -z America/Montreal notes.org
-
-- =-w/--weeks=             weeks ahead to scan (default 4)
-- =-d/--default-duration=  duration for events with no end time, in minutes (default 60)
-- =-z/--time-zone=         timezone for the output (default Europe/Paris)
-- =-a/--all-day=           also emit all-day SCHEDULED/DEADLINE as busy
-- =--reference-date=       window start date, YYYY-MM-DD (default: today)
-
-Cross-format options for DONE handling:
-
-- =-D/--done-keywords=     extra DONE keywords, comma-separated (e.g. =CANX,CANCELED=)
-- =-k/--keep-done=         keep DONE subtrees (by default they're stripped from every output)
-
-Render AST content in a different format:
+Render the AST /content/ in a different format:
 
 : hop -r html notes.org                       # AST as JSON with HTML-rendered contents
 : hop -r org notes.org                        # AST as JSON with Org-rendered contents
 
-Filter:
+Filters:
 
 : hop -l 2 notes.org                          # Headlines with level <= 2
 : hop -L 2 notes.org                          # Same, deeper headings rendered as bold
@@ -54,16 +35,39 @@ Filter:
 : hop -i "section[0-9]+" notes.org            # ID or CUSTOM_ID matches regex
 : hop -I "chapter\d+" notes.org               # Any ancestor ID matches regex
 
-Options:
+HTML export with CSS themes:
 
-: hop -b https://base.io -f html index.org    # Prepend base URL to relative links
 : hop -c https://example.com/style.css -f html notes.org  # Use a remote CSS URL
 : hop -c file:///path/to/style.css -f html notes.org      # Inline a local file via file:// URL
 : hop -c custom.css -f html notes.org                     # Inline a local .css file
 : hop -c ../styles/theme.css -f html notes.org            # Inline via relative path
 : hop -c /home/user/theme.css -f html notes.org           # Inline via absolute path
 : hop -c org -f html notes.org                            # Use "org" pico-theme from CDN
+
+ICS export options (=ics= and =ics-anon=):
+
+- =-w/--weeks=             # weeks ahead to scan (unbounded unless set)
+- =-R/--reference-date=    # window start date, YYYY-MM-DD (today when only -w is set)
+- =-d/--default-duration=  # minutes for events with no end time (only added when set)
+- =-z/--time-zone=         # timezone anchoring the Org timestamps (default: system timezone)
+- =-a/--all-day=           # also emit all-day SCHEDULED/DEADLINE (excluded by default)
+
+The =ics-anon= format re-emits =SCHEDULED= and =DEADLINE= timestamps as
+anonymised "Busy" blocks. Both formats emit UTC datetimes, anchored in
+the =-z= timezone. Without these options, both mirror the Org file: every
+timed timestamp, no synthetic end times, and repeaters kept as =RRULE=.
+A bounded window (=-w=) makes =ics-anon= expand repeaters into
+occurrences and merge overlapping blocks.
+
+Other export options:
+
+: hop -D CANX,CANCELED notes.org              # Extra DONE keywords, comma-separated
+: hop -k notes.org                            # Keep DONE subtrees (stripped by default)
+: hop -b https://base.io -f html index.org    # Prepend base URL to relative links
 : hop -n notes.org                            # Preserve original line breaks
+
+Statistics:
+
 : hop -s notes.org                            # Display document statistics
 
 Check =hop --help= for all options.

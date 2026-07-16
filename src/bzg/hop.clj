@@ -1086,19 +1086,77 @@ li > p { margin-top: 0.5em; }
 
     :else node))
 
+(defn- step-ldt
+  "Shift a LocalDateTime by k units (k may be 0); handles every Org repeater unit."
+  [ldt k unit]
+  (case unit
+    :hour  (.plusHours ldt k)
+    :day   (.plusDays ldt k)
+    :week  (.plusWeeks ldt k)
+    :month (.plusMonths ldt k)
+    :year  (.plusYears ldt k)
+    nil))
+
+(def ^:private chrono-units
+  {:hour  java.time.temporal.ChronoUnit/HOURS
+   :day   java.time.temporal.ChronoUnit/DAYS
+   :week  java.time.temporal.ChronoUnit/WEEKS
+   :month java.time.temporal.ChronoUnit/MONTHS
+   :year  java.time.temporal.ChronoUnit/YEARS})
+
+(defn- ics-window
+  "Optional [win-s win-e] LocalDateTime bounds from --reference-date/--weeks,
+   nil when neither is set. --reference-date alone leaves the window
+   open-ended; --weeks alone starts it today (in tz)."
+  [opts tz]
+  (when (or (:weeks opts) (:reference-date opts))
+    (let [ref (or (:reference-date opts) (java.time.LocalDate/now tz))]
+      [(.atStartOfDay ref)
+       (when-let [w (:weeks opts)]
+         (.atStartOfDay (.plusWeeks ref w)))])))
+
+(defn- timestamp-start-ldt
+  "Start of an ISO timestamp (or range) as a LocalDateTime; date-only
+   values count from midnight."
+  [iso]
+  (let [s (first (str/split iso #"/"))]
+    (if (str/includes? s "T")
+      (java.time.LocalDateTime/parse s)
+      (.atStartOfDay (java.time.LocalDate/parse s)))))
+
+(defn- item-in-window?
+  "True when the item starts inside [win-s win-e) — for repeaters, when any
+   occurrence does. A nil win-e means no upper bound."
+  [{:keys [timestamp repeater]} win-s win-e]
+  (let [start            (timestamp-start-ldt timestamp)
+        {:keys [n unit]} repeater
+        before-end?      (fn [ldt] (or (nil? win-e) (.isBefore ldt win-e)))]
+    (if (.isBefore start win-s)
+      ;; starts before the window: only a repeater can reach it
+      (boolean
+       (when (and n (chrono-units unit))
+         (let [gap (.between (chrono-units unit) start win-s)
+               k0  (* n (quot gap n))]
+           (->> (iterate #(+ % n) k0)
+                (map #(step-ldt start % unit))
+                (drop-while #(.isBefore % win-s))
+                first
+                before-end?))))
+      (before-end? start))))
+
 (defn- collect-ics-items
   "Collect SCHEDULED -> VEVENT and DEADLINE+TODO -> VTODO items, using organ's
    active-timestamps accessor (inline timestamps are not exported). DONE
    entries are pruned upstream unless --keep-done."
   [ast]
   (->> (organ/active-timestamps ast)
-       (keep (fn [{:keys [origin value repeater title todo]}]
+       (keep (fn [{:keys [origin value repeater title todo all-day]}]
                (case origin
                  :scheduled {:ics-type  :vevent :title    title :todo todo
-                             :timestamp value   :repeater repeater}
+                             :timestamp value   :repeater repeater :all-day all-day}
                  :deadline  (when todo
                               {:ics-type  :vtodo :title    title :todo todo
-                               :timestamp value  :repeater repeater})
+                               :timestamp value  :repeater repeater :all-day all-day})
                  nil)))))
 
 (defn- uid-for-item
@@ -1144,12 +1202,31 @@ li > p { margin-top: 0.5em; }
       (.plusDays 1)
       (.format (java.time.format.DateTimeFormatter/ofPattern "yyyyMMdd"))))
 
+(def ^:private ics-local-dtf
+  "ICS floating datetime formatter (20250115T103000)."
+  (java.time.format.DateTimeFormatter/ofPattern "yyyyMMdd'T'HHmmss"))
+
 (defn- render-ast-as-ics
   "Export scheduled items as VEVENT and deadline+TODO items as VTODO.
-   With --keep-done, DONE deadlines yield VTODOs with STATUS:COMPLETED."
-  [ast done-keywords]
-  (let [items (assign-uids (collect-ics-items ast))
-        now   (.format utc-dtf (java.time.Instant/now))
+   With --keep-done, DONE deadlines yield VTODOs with STATUS:COMPLETED.
+   All-day entries are excluded unless --all-day. --reference-date/--weeks
+   bound the exported items (a repeater keeps its RRULE when an occurrence
+   reaches the window); --default-duration fills in missing end times.
+   Datetimes are anchored in --time-zone (system timezone by default) and
+   emitted as UTC."
+  [ast done-keywords opts]
+  (let [tz     (if-let [z (:time-zone opts)]
+                 (java.time.ZoneId/of z)
+                 (java.time.ZoneId/systemDefault))
+        [win-s win-e] (ics-window opts tz)
+        fmt-dt (fn [s] (.format utc-dtf
+                                (.toInstant
+                                 (.atZone (java.time.LocalDateTime/parse s ics-local-dtf) tz))))
+        items  (cond->> (collect-ics-items ast)
+                 (not (:all-day opts)) (remove :all-day)
+                 win-s (filter #(item-in-window? % win-s win-e))
+                 true  assign-uids)
+        now    (.format utc-dtf (java.time.Instant/now))
         components
         (map
          (fn [item]
@@ -1166,10 +1243,15 @@ li > p { margin-top: 0.5em; }
                            :vevent (if is-date
                                      [(str "DTSTART;VALUE=DATE:" dtstart)
                                       (str "DTEND;VALUE=DATE:" (ics-next-day dtstart))]
-                                     (if-let [dtend (:dtend ts)]
-                                       [(str "DTSTART:" dtstart) (str "DTEND:" dtend)]
-                                       [(str "DTSTART:" dtstart)]))
-                           :vtodo  [(str "DUE" (when is-date ";VALUE=DATE") ":" dtstart)])
+                                     (let [dtend (or (:dtend ts)
+                                                     (when-let [d (:default-duration opts)]
+                                                       (-> (java.time.LocalDateTime/parse dtstart ics-local-dtf)
+                                                           (.plusMinutes d)
+                                                           (.format ics-local-dtf))))]
+                                       (cond-> [(str "DTSTART:" (fmt-dt dtstart))]
+                                         dtend (conj (str "DTEND:" (fmt-dt dtend))))))
+                           :vtodo  [(str "DUE" (when is-date ";VALUE=DATE") ":"
+                                         (if is-date dtstart (fmt-dt dtstart)))])
                  status  (when (= ics-type :vtodo)
                            [(str "STATUS:" (if (contains? done-keywords (name todo))
                                              "COMPLETED" "NEEDS-ACTION"))])]
@@ -1196,17 +1278,20 @@ li > p { margin-top: 0.5em; }
 ;; ICS anonymised (free/busy) export -- the `ics-anon` format
 ;; ---------------------------------------------------------------------------
 ;; Re-emits SCHEDULED and DEADLINE timestamps as anonymised "Busy" blocks
-;; over a forward window. All-day timestamps are skipped unless --all-day.
-;; Strictly overlapping intervals are merged; touching boundaries stay
-;; distinct. --time-zone only anchors the org timestamps; output datetimes
-;; are normalised to UTC (Z suffix) so no VTIMEZONE is needed. The plain
-;; `ics` format, by contrast, mirrors the org timestamps as floating times.
+;; With --weeks, repeaters are expanded over the bounded window and strictly
+;; overlapping intervals are merged (touching boundaries stay distinct);
+;; without it every timestamp yields one block and repeaters keep their
+;; RRULE, like the plain `ics` format. All-day timestamps are skipped
+;; unless --all-day. --time-zone only anchors the org timestamps; output
+;; datetimes are normalised to UTC (Z suffix) so no VTIMEZONE is needed.
+;; The plain `ics` format anchors and emits its datetimes the same way.
 
 (defn- busy-config
   "Build the busy-mode config map from parsed CLI options."
   [opts]
-  {:tz             (java.time.ZoneId/of (:time-zone opts))
-   :weeks          (:weeks opts)
+  {:tz             (if-let [z (:time-zone opts)]
+                     (java.time.ZoneId/of z)
+                     (java.time.ZoneId/systemDefault))
    :event-duration (:default-duration opts)
    :all-day        (boolean (:all-day opts))})
 
@@ -1215,38 +1300,22 @@ li > p { margin-top: 0.5em; }
 (defn- zmax [a b] (if (.isAfter a b) a b))
 
 (defn- entry->base
-  "Base [start end] LocalDateTimes of a timestamp entry (event-duration fills a missing end)."
+  "Base [start end] LocalDateTimes of a timestamp entry (--default-duration
+   fills a missing end; without it the interval is zero-length)."
   [{:keys [start end all-day]} event-duration]
   (if all-day
     (let [d (java.time.LocalDate/parse start)]
       [(.atStartOfDay d) (.atStartOfDay (.plusDays d 1))])
-    (let [s (java.time.LocalDateTime/parse start)
-          e (if end
-              (let [e0 (java.time.LocalDateTime/parse end)]
-                (cond (.isAfter e0 s)  e0
-                      ;; end before start: overnight range (23:00-01:00)
-                      (.isBefore e0 s) (.plusDays e0 1)
-                      :else            (.plusMinutes s event-duration)))
-              (.plusMinutes s event-duration))]
+    (let [s    (java.time.LocalDateTime/parse start)
+          fill #(if event-duration (.plusMinutes s event-duration) s)
+          e    (if end
+                 (let [e0 (java.time.LocalDateTime/parse end)]
+                   (cond (.isAfter e0 s)  e0
+                         ;; end before start: overnight range (23:00-01:00)
+                         (.isBefore e0 s) (.plusDays e0 1)
+                         :else            (fill)))
+                 (fill))]
       [s e])))
-
-(defn- step-ldt
-  "Shift a LocalDateTime by k units (k may be 0); handles every Org repeater unit."
-  [ldt k unit]
-  (case unit
-    :hour  (.plusHours ldt k)
-    :day   (.plusDays ldt k)
-    :week  (.plusWeeks ldt k)
-    :month (.plusMonths ldt k)
-    :year  (.plusYears ldt k)
-    nil))
-
-(def ^:private chrono-units
-  {:hour  java.time.temporal.ChronoUnit/HOURS
-   :day   java.time.temporal.ChronoUnit/DAYS
-   :week  java.time.temporal.ChronoUnit/WEEKS
-   :month java.time.temporal.ChronoUnit/MONTHS
-   :year  java.time.temporal.ChronoUnit/YEARS})
 
 (defn- first-repeat-offset
   "Offset (in repeater units, multiple of n) of the first occurrence that may
@@ -1277,15 +1346,14 @@ li > p { margin-top: 0.5em; }
             ze (ldt->zdt end-ldt tz)]
         (when (in-window? zs ze) [[zs ze]])))))
 
-(defn- busy-events
-  "Busy intervals from SCHEDULED and DEADLINE timestamps within the window.
+(defn- busy-entries
+  "SCHEDULED and DEADLINE timestamp entries eligible for busy output.
    DONE entries are pruned upstream unless --keep-done; all-day entries
-   only count when :all-day is set on cfg."
-  [ast cfg win-s win-e]
+   are skipped when :all-day is unset on cfg."
+  [ast cfg]
   (->> (organ/active-timestamps ast)
        (filter #(#{:scheduled :deadline} (:origin %)))
-       (filter #(or (:all-day cfg) (not (:all-day %))))
-       (mapcat #(entry->intervals % (:event-duration cfg) (:tz cfg) win-s win-e))))
+       (filter #(or (:all-day cfg) (not (:all-day %))))))
 
 (defn- sort-intervals [ivs]
   (sort-by #(.toInstant (first %)) ivs))
@@ -1302,22 +1370,26 @@ li > p { margin-top: 0.5em; }
           [] ivs))
 
 (defn- render-busy-ics
-  "Emit a VCALENDAR of zoned [start end] intervals as anonymised Busy VEVENTs.
-   Datetimes are normalised to UTC (Z suffix) so no VTIMEZONE is needed."
+  "Emit a VCALENDAR of zoned [start end rrule?] intervals as anonymised Busy
+   VEVENTs. Datetimes are normalised to UTC (Z suffix) so no VTIMEZONE is
+   needed; zero-length intervals get no DTEND."
   [intervals]
   (let [now     (.format utc-dtf (java.time.Instant/now))
         fmt-utc (fn [zdt] (.format utc-dtf (.toInstant zdt)))
-        event   (fn [idx [s e]]
+        event   (fn [idx [s e rrule]]
                   (str/join "\r\n"
-                            ["BEGIN:VEVENT"
-                             (ics-fold-line (str "UID:busy-" idx "-" (fmt-utc s) "@hop"))
-                             (str "DTSTAMP:" now)
-                             (str "DTSTART:" (fmt-utc s))
-                             (str "DTEND:" (fmt-utc e))
-                             (ics-fold-line (str "SUMMARY:" (ics-escape "Busy")))
-                             "STATUS:CONFIRMED"
-                             "TRANSP:OPAQUE"
-                             "END:VEVENT"]))]
+                            (concat
+                             ["BEGIN:VEVENT"
+                              (ics-fold-line (str "UID:busy-" idx "-" (fmt-utc s) "@hop"))
+                              (str "DTSTAMP:" now)
+                              (str "DTSTART:" (fmt-utc s))]
+                             (when-not (.isEqual s e)
+                               [(str "DTEND:" (fmt-utc e))])
+                             (when rrule [rrule])
+                             [(ics-fold-line (str "SUMMARY:" (ics-escape "Busy")))
+                              "STATUS:CONFIRMED"
+                              "TRANSP:OPAQUE"
+                              "END:VEVENT"])))]
     (str (str/join "\r\n"
                    (concat ["BEGIN:VCALENDAR" "VERSION:2.0" "PRODID:-//hop//EN"
                             "CALSCALE:GREGORIAN"]
@@ -1326,16 +1398,34 @@ li > p { margin-top: 0.5em; }
          "\r\n")))
 
 (defn- render-ast-as-busy-ics
-  "Render the AST as anonymised \"Busy\" blocks (merged SCHEDULED/DEADLINE, today over the window)."
+  "Render the AST as anonymised \"Busy\" blocks. With --weeks, repeaters are
+   expanded over the bounded window and overlapping blocks are merged;
+   without it every timestamp yields one block and repeaters keep their
+   RRULE, like the plain ics format. --reference-date filters out items
+   starting before it."
   [ast opts]
-  (let [cfg    (busy-config opts)
-        tz     (:tz cfg)
-        today  (or (:reference-date opts) (java.time.LocalDate/now tz))
-        end    (.plusWeeks today (:weeks cfg))
-        win-s  (zdt today java.time.LocalTime/MIDNIGHT tz)
-        win-e  (zdt end java.time.LocalTime/MIDNIGHT tz)
-        events (busy-events ast cfg win-s win-e)]
-    (render-busy-ics (-> events sort-intervals merge-intervals-zoned))))
+  (let [cfg     (busy-config opts)
+        tz      (:tz cfg)
+        ref     (or (:reference-date opts) (java.time.LocalDate/now tz))
+        entries (busy-entries ast cfg)]
+    (if-let [w (:weeks opts)]
+      (let [win-s  (zdt ref java.time.LocalTime/MIDNIGHT tz)
+            win-e  (zdt (.plusWeeks ref w) java.time.LocalTime/MIDNIGHT tz)
+            events (mapcat #(entry->intervals % (:event-duration cfg) tz win-s win-e)
+                           entries)]
+        (render-busy-ics (-> events sort-intervals merge-intervals-zoned)))
+      (let [win-s  (when (:reference-date opts) (.atStartOfDay ref))
+            blocks (->> entries
+                        (filter #(or (nil? win-s)
+                                     (item-in-window?
+                                      {:timestamp (:start %) :repeater (:repeater %)}
+                                      win-s nil)))
+                        (map (fn [entry]
+                               (let [[s e] (entry->base entry (:event-duration cfg))]
+                                 [(ldt->zdt s tz) (ldt->zdt e tz)
+                                  (org-repeater-to-rrule (:repeater entry))])))
+                        sort-intervals)]
+        (render-busy-ics blocks)))))
 
 (defn- prepare-ast [ast]
   (let [options (parse-options-string (get-in ast [:meta :options]))]
@@ -1555,14 +1645,14 @@ li > p { margin-top: 0.5em; }
    ["-D" "--done-keywords KW,KW" "Comma-separated extra DONE keywords (e.g. CANX,CANCELED); merged with DONE and any #+TODO: directives in the file"
     :parse-fn #(into #{} (remove str/blank? (map str/trim (str/split % #","))))]
    ["-k" "--keep-done" "Keep subtrees whose heading is in a DONE state (by default they're stripped from every output)"]
-   ;; Tuning for the ics-anon format
-   ["-a" "--all-day" "ics-anon: also emit all-day SCHEDULED/DEADLINE as busy (off by default)"]
-   ["-d" "--default-duration N" "ics-anon: default minutes for events without an end time (default 60)"
-    :default 60 :parse-fn #(Integer/parseInt %) :validate [pos? "Must be positive"]]
-   ["-w" "--weeks N" "ics-anon: weeks ahead to scan (default 4)"
-    :default 4 :parse-fn #(Integer/parseInt %) :validate [pos? "Must be positive"]]
-   ["-z" "--time-zone ZONE" "ics-anon: timezone (default Europe/Paris)" :default "Europe/Paris"]
-   [nil "--reference-date DATE" "ics-anon: window start date, YYYY-MM-DD (default: today; useful for reproducible output)"
+   ;; Tuning for the ics and ics-anon formats
+   ["-a" "--all-day" "also emit all-day SCHEDULED/DEADLINE (excluded by default)"]
+   ["-d" "--default-duration N" "minutes for events without an end time (only added when set)"
+    :parse-fn #(Integer/parseInt %) :validate [pos? "Must be positive"]]
+   ["-w" "--weeks N" "weeks ahead to scan (unbounded unless set; a bounded window lets ics-anon expand and merge repeaters)"
+    :parse-fn #(Integer/parseInt %) :validate [pos? "Must be positive"]]
+   ["-z" "--time-zone ZONE" "timezone anchoring the org timestamps (default: system timezone); output datetimes are UTC"]
+   ["-R" "--reference-date DATE" "window start date, YYYY-MM-DD (today when only -w is set; useful for reproducible output)"
     :parse-fn #(java.time.LocalDate/parse %)]])
 
 (defn- bbin-version
@@ -1656,7 +1746,7 @@ li > p { margin-top: 0.5em; }
                   "md"       (println (render-ast-as-markdown cleaned-ast))
                   "html"     (println (render-ast-as-html cleaned-ast))
                   "org"      (println (render-ast-as-org cleaned-ast))
-                  "ics"      (do (print (render-ast-as-ics filtered-ast done-keywords))
+                  "ics"      (do (print (render-ast-as-ics filtered-ast done-keywords options))
                                  (flush))
                   "ics-anon" (do (print (render-ast-as-busy-ics filtered-ast options))
                                  (flush))
