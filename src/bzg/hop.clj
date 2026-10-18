@@ -171,35 +171,31 @@
 ;; Inline Node Rendering -- forward declarations
 (declare render-inline render-link-node)
 
+(def ^:private inline-markup
+  "[open close] delimiters of emphasis and literal inline nodes, per format."
+  {:bold      {:html ["<strong>" "</strong>"] :md ["**" "**"] :org ["*" "*"]}
+   :italic    {:html ["<em>" "</em>"]         :md ["*" "*"]   :org ["/" "/"]}
+   :underline {:html ["<u>" "</u>"]           :md ["_" "_"]   :org ["_" "_"]}
+   :strike    {:html ["<del>" "</del>"]       :md ["~~" "~~"] :org ["+" "+"]}
+   :code      {:html ["<code>" "</code>"]     :md ["`" "`"]   :org ["~" "~"]}
+   :verbatim  {:html ["<code>" "</code>"]     :md ["`" "`"]   :org ["=" "="]}})
+
+(defn- wrap-markup
+  "Wrap text in the delimiters of inline node type `type` for fmt."
+  [type fmt text]
+  (let [[open close] (get-in inline-markup [type fmt])]
+    (str open text close)))
+
 (defn- render-inline-node
   "Render a single inline node to a string in the given format."
   [node fmt]
   (case (:type node)
     :text      (case fmt :html (escape-html (:value node)) (:value node))
-    :bold      (case fmt
-                 :html (str "<strong>" (render-inline (:children node) fmt) "</strong>")
-                 :md   (str "**" (render-inline (:children node) fmt) "**")
-                 (str "*" (render-inline (:children node) fmt) "*"))
-    :italic    (case fmt
-                 :html (str "<em>" (render-inline (:children node) fmt) "</em>")
-                 :md   (str "*" (render-inline (:children node) fmt) "*")
-                 (str "/" (render-inline (:children node) fmt) "/"))
-    :underline (case fmt
-                 :html (str "<u>" (render-inline (:children node) fmt) "</u>")
-                 :md   (str "_" (render-inline (:children node) fmt) "_")
-                 (str "_" (render-inline (:children node) fmt) "_"))
-    :strike    (case fmt
-                 :html (str "<del>" (render-inline (:children node) fmt) "</del>")
-                 :md   (str "~~" (render-inline (:children node) fmt) "~~")
-                 (str "+" (render-inline (:children node) fmt) "+"))
-    :code      (case fmt
-                 :html (str "<code>" (escape-html (:value node)) "</code>")
-                 :md   (str "`" (:value node) "`")
-                 (str "~" (:value node) "~"))
-    :verbatim  (case fmt
-                 :html (str "<code>" (escape-html (:value node)) "</code>")
-                 :md   (str "`" (:value node) "`")
-                 (str "=" (:value node) "="))
+    (:bold :italic :underline :strike)
+    (wrap-markup (:type node) fmt (render-inline (:children node) fmt))
+    (:code :verbatim)
+    (wrap-markup (:type node) fmt
+                 (case fmt :html (escape-html (:value node)) (:value node)))
     :link      (render-link-node node fmt nil)
     :footnote-ref
     (let [label (:label node)]
@@ -245,6 +241,17 @@
                        (:url node) (:target node))]
       (when (image-url? actual-url) node))))
 
+(defn- html-img
+  "Plain <img> tag; alt defaults to src."
+  ([src] (html-img src src))
+  ([src alt]
+   (str "<img src=\"" (escape-html src) "\" alt=\"" (escape-html alt) "\">")))
+
+(defn- html-linked-img
+  "An image (used as link description) wrapped in a link to href."
+  [href img-src]
+  (str "<a href=\"" (escape-html href) "\">" (html-img img-src) "</a>"))
+
 (defn- render-link-node
   "Render a :link inline node; affiliated keywords (e.g. #+CAPTION)
    enable enhanced image rendering."
@@ -267,15 +274,11 @@
       (and is-local-file url-is-image (#{:html :md} fmt))
       (let [path (or target url)
             src  (or (image-to-data-uri path) path)]
-        (if (= fmt :html)
-          (if affiliated
-            (render-image-html src (or desc-text target) affiliated)
-            (if desc-is-image
-              (str "<a href=\"" (escape-html src) "\"><img src=\""
-                   (escape-html desc-text) "\" alt=\"" (escape-html desc-text) "\"></a>")
-              (str "<img src=\"" (escape-html src) "\" alt=\""
-                   (escape-html (or desc-text target)) "\">")))
-          (str "![" (or desc-text target) "](" src ")")))
+        (cond
+          (= fmt :md) (str "![" (or desc-text target) "](" src ")")
+          affiliated    (render-image-html src (or desc-text target) affiliated)
+          desc-is-image (html-linked-img src desc-text)
+          :else         (html-img src (or desc-text target))))
 
       ;; HTML format
       (= fmt :html)
@@ -283,18 +286,15 @@
         (and is-remote url-is-image (not has-desc))
         (if affiliated
           (render-image-html url url affiliated)
-          (str "<img src=\"" (escape-html url) "\" alt=\""
-               (escape-html url) "\">"))
+          (html-img url))
 
         (and is-remote url-is-image has-desc (not desc-is-image))
         (if affiliated
           (render-image-html url desc-text affiliated)
-          (str "<img src=\"" (escape-html url) "\" alt=\""
-               (escape-html desc-text) "\">"))
+          (html-img url desc-text))
 
         (and is-remote desc-is-image)
-        (str "<a href=\"" (escape-html url) "\"><img src=\""
-             (escape-html desc-text) "\" alt=\"" (escape-html desc-text) "\"></a>")
+        (html-linked-img url desc-text)
 
         :else
         (let [href    (escape-html (resolve-link-href node :html))
@@ -468,19 +468,15 @@ li > p { margin-top: 0.5em; }
   "Render a sequence of child nodes with smart spacing.
    Sections handle their own spacing via :blank-lines-before."
   [children fmt]
-  (let [sb     (StringBuilder.)
-        first? (volatile! true)]
-    (doseq [child children
-            :let  [r (render-node child fmt)]
-            :when (not (str/blank? r))]
-      (if @first?
-        (vreset! first? false)
-        (.append sb (cond
-                      (= (:type child) :section) "\n"
-                      (= fmt :html)              "\n"
-                      :else                      "\n\n")))
-      (.append sb r))
-    (.toString sb)))
+  (let [separator (fn [child]
+                    (if (or (= (:type child) :section) (= fmt :html)) "\n" "\n\n"))]
+    (->> children
+         (keep (fn [child]
+                 (let [r (render-node child fmt)]
+                   (when-not (str/blank? r) [child r]))))
+         (map-indexed (fn [i [child r]]
+                        (if (zero? i) r (str (separator child) r))))
+         (str/join))))
 
 (defn- meta-string
   "A document :meta value as one string. A repeated #+KEY: line gives a
@@ -502,11 +498,6 @@ li > p { margin-top: 0.5em; }
                "t"   true
                "nil" false
                (try (Integer/parseInt v) (catch Exception _ v)))]))))
-
-(defn- get-export-options
-  "Extract parsed export options from the AST metadata."
-  [ast]
-  (parse-options-string (meta-string ast :options)))
 
 (defn- collect-toc-entries
   "Recursively collect TOC entries from section nodes up to max-depth.
@@ -543,38 +534,26 @@ li > p { margin-top: 0.5em; }
   [entries fmt]
   (when-let [entries (seq (normalize-toc-levels entries))]
     (case fmt
-      :html (let [sb (StringBuilder.)
-                  _  (.append sb "<nav id=\"table-of-contents\">\n<h2>Table of Contents</h2>\n")
-                  _  (loop [[entry & more] entries
-                            prev-level     0]
-                       (if (nil? entry)
-                        ;; Close all remaining open lists
-                         (dotimes [_ prev-level]
-                           (.append sb "</li>\n</ul>\n"))
-                         (let [{:keys [level title section-number id]} entry
-                               num-str                                 (if section-number (str section-number " ") "")
-                               link                                    (str "<a href=\"#" (escape-html id) "\">" num-str (render-inline title :html) "</a>")]
+      :html (let [;; Markup emitted before an entry, given the previous entry's level:
+                  ;; open sublists when going deeper, close them when coming back up,
+                  ;; and close the previous item whenever one is open at this level.
+                  before (fn [prev level]
                            (cond
-                            ;; Deeper level: open new sublist(s)
-                             (> level prev-level)
-                             (do (dotimes [_ (- level prev-level)]
-                                   (.append sb "<ul>\n"))
-                                 (.append sb (str "<li>" link))
-                                 (recur more level))
-                            ;; Same level: close previous item, add new one
-                             (= level prev-level)
-                             (do (.append sb "</li>\n")
-                                 (.append sb (str "<li>" link))
-                                 (recur more level))
-                            ;; Shallower level: close sublists, then add item
-                             :else
-                             (do (dotimes [_ (- prev-level level)]
-                                   (.append sb "</li>\n</ul>\n"))
-                                 (.append sb "</li>\n")
-                                 (.append sb (str "<li>" link))
-                                 (recur more level))))))
-                  _  (.append sb "</nav>")]
-              (.toString sb))
+                             (> level prev) (repeat-str (- level prev) "<ul>\n")
+                             (= level prev) "</li>\n"
+                             :else          (str (repeat-str (- prev level) "</li>\n</ul>\n")
+                                                 "</li>\n")))
+                  link   (fn [{:keys [title section-number id]}]
+                           (str "<li><a href=\"#" (escape-html id) "\">"
+                                (when section-number (str section-number " "))
+                                (render-inline title :html) "</a>"))
+                  levels (cons 0 (map :level entries))
+                  last-level (:level (last entries))]
+              (str "<nav id=\"table-of-contents\">\n<h2>Table of Contents</h2>\n"
+                   (str/join (map (fn [prev e] (str (before prev (:level e)) (link e)))
+                                  levels entries))
+                   (repeat-str last-level "</li>\n</ul>\n")
+                   "</nav>"))
       ;; org and markdown
       (->> entries
            (map (fn [{:keys [level title section-number]}]
@@ -587,14 +566,11 @@ li > p { margin-top: 0.5em; }
            (str/join "\n")))))
 
 (defn- render-document [node fmt level]
-  (let [options     (or (:parsed-options node) (parse-options-string (meta-string node :options)))
-        toc?        (get options :toc)
-        toc-depth   (let [h (get options :h 6)
-                          t (get options :toc)]
-                    ;; toc can be true (use H:) or an integer depth
-                      (if (integer? t) t (if (integer? h) h 6)))
-        toc-entries (when toc? (collect-toc-entries (:children node) toc-depth))
-        toc-str     (when toc? (render-toc toc-entries fmt))]
+  (let [{toc? :toc h :h} (:parsed-options node)
+        ;; toc can be true (use H:) or an integer depth
+        toc-depth   (cond (integer? toc?) toc? (integer? h) h :else 6)
+        toc-str     (when toc?
+                      (render-toc (collect-toc-entries (:children node) toc-depth) fmt))]
     (case fmt
       :html (let [footnotes      (filter #(= (:type %) :footnote-def) (:children node))
                   title-html     (when-let [t (:title node)]
@@ -650,6 +626,22 @@ li > p { margin-top: 0.5em; }
   [planning]
   (keep (fn [kw] (when-let [iso (get planning kw)] [kw iso])) planning-order))
 
+(defn- iso->org-timestamp
+  "Active Org timestamp for an ISO value (2025-01-15T10:30, or a start/end
+   range), with an optional repeater cookie: <2025-01-15 10:30-11:00 +1w>.
+   A range with a time on both sides shares one timestamp; otherwise it is written
+   as <start>--<end>."
+  [iso repeater]
+  (let [rep-str  (if repeater (str " " repeater) "")
+        single   (fn [s] (str "<" (str/replace s "T" " ") rep-str ">"))
+        timed?   #(str/includes? % "T")]
+    (if (str/includes? iso "/")
+      (let [[start end] (str/split iso #"/")]
+        (if (and (timed? start) (timed? end))
+          (str "<" (str/replace start "T" " ") "-" (second (str/split end #"T")) rep-str ">")
+          (str (single start) "--" (single end))))
+      (single iso))))
+
 (defn- render-planning
   "Render planning info (CLOSED/SCHEDULED/DEADLINE) in the given format."
   [planning fmt]
@@ -671,20 +663,8 @@ li > p { margin-top: 0.5em; }
                      "</div>")
           :org  (str/join " "
                           (map (fn [[kw iso]]
-                                 (let [rep     (planning-repeat planning kw)
-                                       rep-str (if rep (str " " rep) "")
-                                       ts      (if (str/includes? iso "/")
-                                                 (let [[start end] (str/split iso #"/")]
-                                                   (if (and (str/includes? start "T") (str/includes? end "T"))
-                                                     (let [[d t1] (str/split start #"T")
-                                                           t2     (second (str/split end #"T"))]
-                                                       (str "<" d " " t1 "-" t2 rep-str ">"))
-                                                     (str "<" start rep-str ">--<" end rep-str ">")))
-                                                 (if (str/includes? iso "T")
-                                                   (let [[d t] (str/split iso #"T")]
-                                                     (str "<" d " " t rep-str ">"))
-                                                   (str "<" iso rep-str ">")))]
-                                   (str (str/upper-case (name kw)) ": " ts)))
+                                 (str (str/upper-case (name kw)) ": "
+                                      (iso->org-timestamp iso (planning-repeat planning kw))))
                                items))
           ;; markdown
           (str/join " "
@@ -853,9 +833,8 @@ li > p { margin-top: 0.5em; }
          (str/join "\n"))))
 
 (defn- render-comment-node [node fmt]
-  (case fmt
-    :html (str "<!-- " (escape-html (:content node)) " -->")
-    :org  (prefix-lines "# " (:content node))
+  (if (= fmt :org)
+    (prefix-lines "# " (:content node))
     (str "<!-- " (escape-html (:content node)) " -->")))
 
 (defn- render-fixed-width [node fmt]
@@ -967,10 +946,8 @@ li > p { margin-top: 0.5em; }
   "Annotate each :section node with a :section-number string ('1', '1.1',
    ...). Only applied when the document has num:t in #+OPTIONS."
   [ast]
-  (let [options (or (:parsed-options ast) (get-export-options ast))
-        num?    (get options :num false)]
-    (if-not num?
-      ast
+  (if-not (get-in ast [:parsed-options :num])
+    ast
       (letfn [(number-children [children counters]
                 (loop [[child & more] children
                        counters       counters
@@ -990,7 +967,7 @@ li > p { margin-top: 0.5em; }
                                                   :children numbered-kids)]
                         (recur more updated (conj result numbered-child)))
                       (recur more counters (conj result child))))))]
-        (assoc ast :children (number-children (:children ast) {}))))))
+        (assoc ast :children (number-children (:children ast) {})))))
 
 ;; ICS Export
 (defn- ics-fold-line
@@ -1104,20 +1081,24 @@ li > p { margin-top: 0.5em; }
        (when-let [w (:weeks opts)]
          (.atStartOfDay (.plusWeeks ref w)))])))
 
-(defn- timestamp-start-ldt
-  "Start of an ISO timestamp (or range) as a LocalDateTime; date-only
-   values count from midnight."
-  [iso]
-  (let [s (first (str/split iso #"/"))]
-    (if (str/includes? s "T")
-      (java.time.LocalDateTime/parse s)
-      (.atStartOfDay (java.time.LocalDate/parse s)))))
+(defn- iso->ldt
+  "LocalDateTime of an ISO timestamp (2025-01-15T10:30, or 2025-01-15 which
+   counts from midnight)."
+  [s]
+  (if (str/includes? s "T")
+    (java.time.LocalDateTime/parse s)
+    (.atStartOfDay (java.time.LocalDate/parse s))))
+
+(defn- opts->zone
+  "Zone anchoring the Org timestamps: --time-zone, else the system default."
+  [opts]
+  (or (:time-zone opts) (java.time.ZoneId/systemDefault)))
 
 (defn- item-in-window?
-  "True when the item starts inside [win-s win-e) — for repeaters, when any
-   occurrence does. A nil win-e means no upper bound."
-  [{:keys [timestamp repeater]} win-s win-e]
-  (let [start            (timestamp-start-ldt timestamp)
+  "True when the timestamp entry starts inside [win-s win-e) — for
+   repeaters, when any occurrence does. A nil win-e means no upper bound."
+  [{:keys [start repeater]} win-s win-e]
+  (let [start            (iso->ldt start)
         {:keys [n unit]} repeater
         before-end?      (fn [ldt] (or (nil? win-e) (.isBefore ldt win-e)))]
     (if (.isBefore start win-s)
@@ -1134,18 +1115,15 @@ li > p { margin-top: 0.5em; }
       (before-end? start))))
 
 (defn- collect-ics-items
-  "Collect SCHEDULED -> VEVENT and DEADLINE+TODO -> VTODO items, using organ's
-   active-timestamps accessor (inline timestamps are not exported). DONE
-   entries are pruned upstream unless --keep-done."
+  "SCHEDULED -> VEVENT and DEADLINE+TODO -> VTODO entries from organ's
+   active-timestamps (inline timestamps are not exported), each tagged with
+   an :ics-type. DONE entries are pruned upstream unless --keep-done."
   [ast]
   (->> (organ/active-timestamps ast)
-       (keep (fn [{:keys [origin value repeater title todo all-day]}]
+       (keep (fn [{:keys [origin todo] :as entry}]
                (case origin
-                 :scheduled {:ics-type  :vevent :title    title :todo todo
-                             :timestamp value   :repeater repeater :all-day all-day}
-                 :deadline  (when todo
-                              {:ics-type  :vtodo :title    title :todo todo
-                               :timestamp value  :repeater repeater :all-day all-day})
+                 :scheduled (assoc entry :ics-type :vevent)
+                 :deadline  (when todo (assoc entry :ics-type :vtodo))
                  nil)))))
 
 (defn- uid-for-item
@@ -1153,7 +1131,7 @@ li > p { margin-top: 0.5em; }
    the document — reordering entries must not churn the UIDs calendar
    clients rely on. dup counts identical (title, timestamp, type) items."
   [item dup]
-  (let [input (str/join "\n" [(:title item) (:timestamp item)
+  (let [input (str/join "\n" [(:title item) (:value item)
                               (name (:ics-type item)) dup])
         bytes (.digest (java.security.MessageDigest/getInstance "SHA-256")
                        (.getBytes input "UTF-8"))
@@ -1164,7 +1142,7 @@ li > p { margin-top: 0.5em; }
   "Assoc a :uid on each item, counting duplicates in document order."
   [items]
   (:acc (reduce (fn [{:keys [seen acc]} item]
-                  (let [k (mapv item [:title :timestamp :ics-type])
+                  (let [k (mapv item [:title :value :ics-type])
                         n (get seen k 0)]
                     {:seen (assoc seen k (inc n))
                      :acc  (conj acc (assoc item :uid (uid-for-item item n)))}))
@@ -1195,6 +1173,56 @@ li > p { margin-top: 0.5em; }
   "ICS floating datetime formatter (20250115T103000)."
   (java.time.format.DateTimeFormatter/ofPattern "yyyyMMdd'T'HHmmss"))
 
+(defn- ics-utc
+  "UTC ICS datetime (20250115T093000Z) of a floating ICS datetime
+   (20250115T103000) anchored in tz."
+  [s tz]
+  (.format utc-dtf (.toInstant (.atZone (java.time.LocalDateTime/parse s ics-local-dtf) tz))))
+
+(defn- vcalendar
+  "Wrap rendered components in a VCALENDAR (CRLF line endings), with extra
+   header lines after PRODID."
+  [header-lines components]
+  (str (str/join "\r\n"
+                 (concat ["BEGIN:VCALENDAR" "VERSION:2.0" "PRODID:-//hop//EN"]
+                         header-lines
+                         components
+                         ["END:VCALENDAR"]))
+       "\r\n"))
+
+(defn- ics-component
+  "Render one item as a VEVENT (scheduled) or VTODO (deadline) component."
+  [{:keys [ics-type title todo value repeater uid]} done-keywords opts tz now]
+  (let [{:keys [dtstart dtend]} (iso-to-ics-datetime value)
+        is-date (not (str/includes? dtstart "T"))
+        tag     (if (= ics-type :vevent) "VEVENT" "VTODO")
+        summary (if (and todo (= ics-type :vtodo)) (str (name todo) " " title) title)
+        dates   (case ics-type
+                  :vevent (if is-date
+                            [(str "DTSTART;VALUE=DATE:" dtstart)
+                             (str "DTEND;VALUE=DATE:" (ics-next-day dtstart))]
+                            (let [dtend (or dtend
+                                            (when-let [d (:default-duration opts)]
+                                              (-> (java.time.LocalDateTime/parse dtstart ics-local-dtf)
+                                                  (.plusMinutes d)
+                                                  (.format ics-local-dtf))))]
+                              (cond-> [(str "DTSTART:" (ics-utc dtstart tz))]
+                                dtend (conj (str "DTEND:" (ics-utc dtend tz))))))
+                  :vtodo  [(str "DUE" (when is-date ";VALUE=DATE") ":"
+                                (if is-date dtstart (ics-utc dtstart tz)))])
+        status  (when (= ics-type :vtodo)
+                  [(str "STATUS:" (if (contains? done-keywords (name todo))
+                                    "COMPLETED" "NEEDS-ACTION"))])]
+    (str/join "\r\n"
+              (concat [(str "BEGIN:" tag)
+                       (ics-fold-line (str "UID:" uid))
+                       (str "DTSTAMP:" now)]
+                      dates
+                      (when-let [rrule (org-repeater-to-rrule repeater)] [rrule])
+                      [(ics-fold-line (str "SUMMARY:" (ics-escape summary)))]
+                      status
+                      [(str "END:" tag)]))))
+
 (defn- render-ast-as-ics
   "Export scheduled items as VEVENT and deadline+TODO items as VTODO.
    With --keep-done, DONE deadlines yield VTODOs with STATUS:COMPLETED.
@@ -1204,63 +1232,14 @@ li > p { margin-top: 0.5em; }
    Datetimes are anchored in --time-zone (system timezone by default) and
    emitted as UTC."
   [ast done-keywords opts]
-  (let [tz     (or (:time-zone opts) (java.time.ZoneId/systemDefault))
+  (let [tz            (opts->zone opts)
         [win-s win-e] (ics-window opts tz)
-        fmt-dt (fn [s] (.format utc-dtf
-                                (.toInstant
-                                 (.atZone (java.time.LocalDateTime/parse s ics-local-dtf) tz))))
-        items  (cond->> (collect-ics-items ast)
-                 (not (:all-day opts)) (remove :all-day)
-                 win-s (filter #(item-in-window? % win-s win-e))
-                 true  assign-uids)
-        now    (.format utc-dtf (java.time.Instant/now))
-        components
-        (map
-         (fn [item]
-           (let [{:keys [ics-type title todo timestamp repeater uid]} item
-                 ts      (iso-to-ics-datetime timestamp)
-                 dtstart (:dtstart ts)
-                 is-date (not (str/includes? dtstart "T"))
-                 rrule   (org-repeater-to-rrule repeater)
-                 summary (if (and todo (= ics-type :vtodo))
-                           (str (name todo) " " title)
-                           title)
-                 tag     (if (= ics-type :vevent) "VEVENT" "VTODO")
-                 dates   (case ics-type
-                           :vevent (if is-date
-                                     [(str "DTSTART;VALUE=DATE:" dtstart)
-                                      (str "DTEND;VALUE=DATE:" (ics-next-day dtstart))]
-                                     (let [dtend (or (:dtend ts)
-                                                     (when-let [d (:default-duration opts)]
-                                                       (-> (java.time.LocalDateTime/parse dtstart ics-local-dtf)
-                                                           (.plusMinutes d)
-                                                           (.format ics-local-dtf))))]
-                                       (cond-> [(str "DTSTART:" (fmt-dt dtstart))]
-                                         dtend (conj (str "DTEND:" (fmt-dt dtend))))))
-                           :vtodo  [(str "DUE" (when is-date ";VALUE=DATE") ":"
-                                         (if is-date dtstart (fmt-dt dtstart)))])
-                 status  (when (= ics-type :vtodo)
-                           [(str "STATUS:" (if (contains? done-keywords (name todo))
-                                             "COMPLETED" "NEEDS-ACTION"))])]
-             (str/join "\r\n"
-                       (concat
-                        [(str "BEGIN:" tag)
-                         (ics-fold-line (str "UID:" uid))
-                         (str "DTSTAMP:" now)]
-                        dates
-                        (when rrule [rrule])
-                        [(ics-fold-line (str "SUMMARY:" (ics-escape summary)))]
-                        status
-                        [(str "END:" tag)]))))
-         items)]
-    (str (str/join "\r\n"
-                   (concat
-                    ["BEGIN:VCALENDAR"
-                     "VERSION:2.0"
-                     "PRODID:-//hop//EN"]
-                    components
-                    ["END:VCALENDAR"]))
-         "\r\n")))
+        now           (.format utc-dtf (java.time.Instant/now))
+        items         (cond->> (collect-ics-items ast)
+                        (not (:all-day opts)) (remove :all-day)
+                        win-s (filter #(item-in-window? % win-s win-e))
+                        true  assign-uids)]
+    (vcalendar [] (map #(ics-component % done-keywords opts tz now) items))))
 
 ;; ICS anonymised (free/busy) export -- the `ics-anon` format
 ;; ---------------------------------------------------------------------------
@@ -1277,14 +1256,6 @@ li > p { margin-top: 0.5em; }
 ;; datetimes are normalised to UTC (Z suffix) so no VTIMEZONE is needed.
 ;; The plain `ics` format anchors and emits its datetimes the same way.
 
-(defn- busy-config
-  "Build the busy-mode config map from parsed CLI options."
-  [opts]
-  {:tz             (or (:time-zone opts) (java.time.ZoneId/systemDefault))
-   :event-duration (:default-duration opts)
-   :all-day        (boolean (:all-day opts))})
-
-(defn- zdt [d t tz] (java.time.ZonedDateTime/of d t tz))
 (defn- ldt->zdt [ldt tz] (java.time.ZonedDateTime/of ldt tz))
 (defn- zmax [a b] (if (.isAfter a b) a b))
 
@@ -1293,9 +1264,9 @@ li > p { margin-top: 0.5em; }
    fills a missing end; without it the interval is zero-length)."
   [{:keys [start end all-day]} event-duration]
   (if all-day
-    (let [d (java.time.LocalDate/parse start)]
-      [(.atStartOfDay d) (.atStartOfDay (.plusDays d 1))])
-    (let [s    (java.time.LocalDateTime/parse start)
+    (let [s (iso->ldt start)]
+      [s (.plusDays s 1)])
+    (let [s    (iso->ldt start)
           fill #(if event-duration (.plusMinutes s event-duration) s)
           e    (if end
                  (let [e0 (java.time.LocalDateTime/parse end)]
@@ -1343,11 +1314,11 @@ li > p { margin-top: 0.5em; }
    skipped by default; with --all-day, only those whose heading bears no
    TODO keyword count as busy — a keyword marks a task parked on a date,
    not a day-blocking event."
-  [ast cfg]
+  [ast all-day?]
   (->> (organ/active-timestamps ast)
        (filter #(= :scheduled (:origin %)))
        (filter #(or (not (:all-day %))
-                    (and (:all-day cfg) (not (:todo %)))))))
+                    (and all-day? (not (:todo %)))))))
 
 (defn- sort-intervals [ivs]
   (sort-by #(.toInstant (first %)) ivs))
@@ -1384,12 +1355,7 @@ li > p { margin-top: 0.5em; }
                               "STATUS:CONFIRMED"
                               "TRANSP:OPAQUE"
                               "END:VEVENT"])))]
-    (str (str/join "\r\n"
-                   (concat ["BEGIN:VCALENDAR" "VERSION:2.0" "PRODID:-//hop//EN"
-                            "CALSCALE:GREGORIAN"]
-                           (map-indexed event intervals)
-                           ["END:VCALENDAR"]))
-         "\r\n")))
+    (vcalendar ["CALSCALE:GREGORIAN"] (map-indexed event intervals))))
 
 (defn- render-ast-as-busy-ics
   "Render the AST as anonymised \"Busy\" blocks. With --weeks, repeaters are
@@ -1398,24 +1364,20 @@ li > p { margin-top: 0.5em; }
    RRULE, like the plain ics format. --reference-date filters out items
    starting before it."
   [ast opts]
-  (let [cfg     (busy-config opts)
-        tz      (:tz cfg)
-        ref     (or (:reference-date opts) (java.time.LocalDate/now tz))
-        entries (busy-entries ast cfg)]
+  (let [tz       (opts->zone opts)
+        duration (:default-duration opts)
+        ref      (or (:reference-date opts) (java.time.LocalDate/now tz))
+        entries  (busy-entries ast (:all-day opts))]
     (if-let [w (:weeks opts)]
-      (let [win-s  (zdt ref java.time.LocalTime/MIDNIGHT tz)
-            win-e  (zdt (.plusWeeks ref w) java.time.LocalTime/MIDNIGHT tz)
-            events (mapcat #(entry->intervals % (:event-duration cfg) tz win-s win-e)
-                           entries)]
+      (let [win-s  (ldt->zdt (.atStartOfDay ref) tz)
+            win-e  (ldt->zdt (.atStartOfDay (.plusWeeks ref w)) tz)
+            events (mapcat #(entry->intervals % duration tz win-s win-e) entries)]
         (render-busy-ics (-> events sort-intervals merge-intervals-zoned)))
       (let [win-s  (when (:reference-date opts) (.atStartOfDay ref))
             blocks (->> entries
-                        (filter #(or (nil? win-s)
-                                     (item-in-window?
-                                      {:timestamp (:start %) :repeater (:repeater %)}
-                                      win-s nil)))
+                        (filter #(or (nil? win-s) (item-in-window? % win-s nil)))
                         (map (fn [entry]
-                               (let [[s e] (entry->base entry (:event-duration cfg))]
+                               (let [[s e] (entry->base entry duration)]
                                  [(ldt->zdt s tz) (ldt->zdt e tz)
                                   (org-repeater-to-rrule (:repeater entry))])))
                         sort-intervals)]
@@ -1683,6 +1645,66 @@ li > p { margin-top: 0.5em; }
   [msg]
   (println msg) (System/exit 0))
 
+(defn- filter-opts
+  "organ/filter-ast options from the parsed CLI options."
+  [options]
+  {:level-limit           (:level-limit options)
+   :level-limit-inclusive (:level-limit-inclusive options)
+   :title-pattern         (:title options)
+   :id-pattern            (:id options)
+   :section-title-pattern (:under-title options)
+   :section-id-pattern    (:under-id options)})
+
+(defn- report-parse-errors!
+  "Print organ's parse errors, if any, as warnings on stderr."
+  [ast]
+  (when-let [errs (:parse-errors ast)]
+    (binding [*out* *err*]
+      (doseq [{:keys [line message]} errs]
+        (println (str "Warning (line " line "): " message))))))
+
+(defn- render-output
+  "Render the parsed, filtered AST in the requested output format.
+   Org output keeps the raw AST; every other format works on the cleaned
+   one (trimmed content, blank nodes removed). ICS strings are CRLF
+   terminated and must be printed as is."
+  [ast done-keywords options]
+  (let [fmt     (:format options)
+        cleaned (if (= fmt "org") ast (organ/clean-node ast))]
+    (report-parse-errors! cleaned)
+    (if (:stats options)
+      (format-stats (compute-stats ast))
+      (case fmt
+        "md"       (render-ast-as-markdown cleaned)
+        "html"     (render-ast-as-html cleaned)
+        "org"      (render-ast-as-org cleaned)
+        "ics"      (render-ast-as-ics ast done-keywords options)
+        "ics-anon" (render-ast-as-busy-ics ast options)
+        (let [rendered (render-content-in-node cleaned (keyword (:render options)))]
+          (case fmt
+            "json" (format-ast-as-json rendered)
+            "edn"  (organ/format-ast-as-edn rendered)
+            "yaml" (format-ast-as-yaml rendered)))))))
+
+(defn- run
+  "Parse org-content, apply the CLI filters and print the output."
+  [org-content options]
+  (binding [*base-url*  (when-let [u (:base-url options)]
+                          (cond-> u (not (str/ends-with? u "/")) (str "/")))
+            *css-theme* (some-> (:css-theme options) resolve-css-theme)]
+    (let [ast           (organ/parse-org
+                         org-content
+                         {:unwrap?       (not (:no-unwrap options))
+                          :todo-keywords {:done (vec (:done-keywords options))}})
+          done-keywords (set (:done (:todo-keywords ast)))
+          filtered      (cond-> (organ/filter-ast ast (filter-opts options))
+                          (not (:keep-done options)) (prune-done-sections done-keywords))
+          output        (render-output filtered done-keywords options)]
+      (if (str/starts-with? (:format options) "ics")
+        (print output)
+        (println output))
+      (flush))))
+
 (defn -main [& args]
   (let [{:keys [options arguments errors summary]} (cli/parse-opts args cli-options)]
     (cond
@@ -1704,56 +1726,12 @@ li > p { margin-top: 0.5em; }
                           (slurp *in*)
                           (try (slurp file-path)
                                (catch java.io.FileNotFoundException _
-                                 (exit-error (str "File not found - " file-path)))))
-            css-theme   (try (when-let [v (:css-theme options)]
-                               (resolve-css-theme v))
-                             (catch Exception e
-                               (exit-error (.getMessage e))))]
+                                 (exit-error (str "File not found - " file-path)))))]
         (try
-          (binding [*base-url*  (when-let [u (:base-url options)]
-                                  (cond-> u (not (str/ends-with? u "/")) (str "/")))
-                    *css-theme* css-theme]
-            (let [unwrap?       (not (:no-unwrap options))
-                  ast           (organ/parse-org
-                                 org-content
-                                 {:unwrap? unwrap?
-                                  :todo-keywords {:done (vec (:done-keywords options))}})
-                  done-keywords (set (:done (:todo-keywords ast)))
-                  filter-opts   {:level-limit           (:level-limit options)
-                                 :level-limit-inclusive (:level-limit-inclusive options)
-                                 :title-pattern         (:title options)
-                                 :id-pattern            (:id options)
-                                 :section-title-pattern (:under-title options)
-                                 :section-id-pattern    (:under-id options)}
-                  filtered-ast  (cond-> (organ/filter-ast ast filter-opts)
-                                  (not (:keep-done options))
-                                  (prune-done-sections done-keywords))
-                  output-format (:format options)
-                  render-format (keyword (:render options))
-                  is-org-output (= output-format "org")
-                  cleaned-ast   (if is-org-output filtered-ast (organ/clean-node filtered-ast))]
-              ;; Report parse errors to stderr if any
-              (when-let [errs (:parse-errors cleaned-ast)]
-                (binding [*out* *err*]
-                  (doseq [{:keys [line message]} errs]
-                    (println (str "Warning (line " line "): " message)))))
-              (if (:stats options)
-                (println (format-stats (compute-stats filtered-ast)))
-                (case output-format
-                  "md"       (println (render-ast-as-markdown cleaned-ast))
-                  "html"     (println (render-ast-as-html cleaned-ast))
-                  "org"      (println (render-ast-as-org cleaned-ast))
-                  "ics"      (do (print (render-ast-as-ics filtered-ast done-keywords options))
-                                 (flush))
-                  "ics-anon" (do (print (render-ast-as-busy-ics filtered-ast options))
-                                 (flush))
-                  (let [rendered-ast (render-content-in-node cleaned-ast render-format)]
-                    (case output-format
-                      "json" (println (format-ast-as-json rendered-ast))
-                      "edn"  (println (organ/format-ast-as-edn rendered-ast))
-                      "yaml" (println (format-ast-as-yaml rendered-ast))))))
-              (System/exit 0)))
+          (run org-content options)
+          (System/exit 0)
           (catch clojure.lang.ExceptionInfo e
+            ;; Expected user-facing errors (e.g. an unusable --css-theme)
             (exit-error (.getMessage e)))
           (catch Exception e
             (binding [*out* *err*]
