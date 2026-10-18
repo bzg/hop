@@ -386,7 +386,7 @@ li > p { margin-top: 0.5em; }
 .planning { color: #666; font-size: 0.9em; margin: 0.2em 0 0.5em 0; }
 .planning-keyword { font-weight: bold; }")
 
-(def ^:private hljs-cdn "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0")
+(def ^:private hljs-cdn "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.2")
 
 (defn- html-template [title content]
   (let [has-code (str/includes? content "<pre><code")]
