@@ -1,42 +1,25 @@
-- 1 First Section
-  - 1.1 Nested Section
-    - 1.1.1 Deep Section
-- 2 Second Section [#A]
-- 3 Lists
-  - 3.1 Unordered List
-  - 3.2 Ordered List
-  - 3.3 Description List
-- 4 Tables
-- 5 Blocks
-  - 5.1 Source Block
-  - 5.2 Quote Block
-  - 5.3 Example Block
-- 6 Inline Elements
-- 7 Fixed Width and Comments
-- 8 Footnotes
-- 9 Une tâche très longue avec des caractères accentués éàçùûñ pour vérifier le pliage RFC 5545 sur du texte UTF-8
-- 10 Congé sans mot-clé TODO, journée bloquée
-- 11 Rapport à rendre : échéance horodatée, VTODO mais jamais busy
-- 12 Réunion d'équipe
-- 13 Daily standup
+#+TITLE: Test Document
+#+AUTHOR: Test Author
+#+DATE: 2025-01-15
+#+OPTIONS: toc:t num:t H:3
 
 Some top-level paragraph with *bold*, /italic/, _underline_, +strikethrough+, ~code~, and =verbatim= markup.
 
 A second paragraph with a [[https://example.com][link with description]] and a bare link [[https://example.com]].
 
-* 1 First Section
+* First Section
 
 Paragraph in first section.
 
-** 1.1 Nested Section
+** Nested Section
 
 Paragraph in nested section with footnote reference[fn:1].
 
-*** 1.1.1 Deep Section
+*** Deep Section
 
 Deep content here.
 
-* TODO 2 Second Section [#A] :tag1:tag2:
+* TODO Second Section [#A] :tag1:tag2:
 SCHEDULED: <2025-03-15 10:00>
 :PROPERTIES:
 :CUSTOM_ID: second-section
@@ -44,9 +27,9 @@ SCHEDULED: <2025-03-15 10:00>
 
 This section has a TODO keyword, priority, tags, scheduling and properties.
 
-* 3 Lists
+* Lists
 
-** 3.1 Unordered List
+** Unordered List
 
 - First item
 - Second item with *bold*
@@ -54,19 +37,19 @@ This section has a TODO keyword, priority, tags, scheduling and properties.
   - Nested item one
   - Nested item two
 
-** 3.2 Ordered List
+** Ordered List
 
 1. First
 2. Second
 3. Third
 
-** 3.3 Description List
+** Description List
 
 - Emacs :: A self-documenting text editor
 - Vim :: A modal text editor
 - Nano :: A simple terminal editor
 
-* 4 Tables
+* Tables
 
 | Name  | Language | Year |
 |-------+----------+------|
@@ -74,30 +57,30 @@ This section has a TODO keyword, priority, tags, scheduling and properties.
 | Vim   | C        | 1991 |
 | Nano  | C        | 1999 |
 
-* 5 Blocks
+* Blocks
 
-** 5.1 Source Block
+** Source Block
 
-#+BEGIN_SRC clojure clojure
+#+BEGIN_SRC clojure
 (defn hello [name]
   (println "Hello," name))
 #+END_SRC
 
-** 5.2 Quote Block
+** Quote Block
 
 #+BEGIN_QUOTE
 The best way to predict the future is to invent it.
 -- Alan Kay
 #+END_QUOTE
 
-** 5.3 Example Block
+** Example Block
 
 #+BEGIN_EXAMPLE
 This is example text.
   Indentation is preserved.
 #+END_EXAMPLE
 
-* 6 Inline Elements
+* Inline Elements
 
 An image link: [[https://example.com/image.png]].
 
@@ -107,7 +90,7 @@ A mailto link: [[mailto:test@example.com][Email me]].
 
 An internal link to [[#second-section]].
 
-* 7 Fixed Width and Comments
+* Fixed Width and Comments
 
 : This is fixed width text.
 : Second fixed width line.
@@ -115,7 +98,7 @@ An internal link to [[#second-section]].
 # This is a comment.
 # Second comment line.
 
-* 8 Footnotes
+* Footnotes
 
 Paragraph referencing another footnote[fn:2].
 
@@ -123,18 +106,18 @@ Paragraph referencing another footnote[fn:2].
 
 [fn:2] Second footnote definition.
 
-* TODO 9 Une tâche très longue avec des caractères accentués éàçùûñ pour vérifier le pliage RFC 5545 sur du texte UTF-8
+* TODO Une tâche très longue avec des caractères accentués éàçùûñ pour vérifier le pliage RFC 5545 sur du texte UTF-8
 DEADLINE: <2025-04-20>
 
-* 10 Congé sans mot-clé TODO, journée bloquée
+* Congé sans mot-clé TODO, journée bloquée
 SCHEDULED: <2025-04-21>
 
-* TODO 11 Rapport à rendre : échéance horodatée, VTODO mais jamais busy
+* TODO Rapport à rendre : échéance horodatée, VTODO mais jamais busy
 DEADLINE: <2025-04-22 16:00>
 
-* 12 Réunion d'équipe :meeting:
+* Réunion d'équipe :meeting:
 SCHEDULED: <2025-05-10 14:00-16:00>
 
-* 13 Daily standup
+* Daily standup
 SCHEDULED: <2025-06-01 09:00 +1d>
 

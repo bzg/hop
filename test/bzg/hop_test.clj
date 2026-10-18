@@ -1,6 +1,7 @@
 (ns bzg.hop-test
   (:require [babashka.process :refer [shell]]
             [clojure.string :as str]
+            [clojure.test :as test]
             [babashka.fs :as fs]))
 
 (def parser "src/bzg/hop.clj")
@@ -28,16 +29,29 @@
     (str/replace text #"DTSTAMP:\d{8}T\d{6}Z" "DTSTAMP:NORMALIZED")
     text))
 
-(defn- test-cli-flags
-  "tools.cli doesn't reject duplicate short flags; check them here."
+(defn- run-unit-tests
+  "Run the clojure.test suite in bzg.hop-unit-test; :pass or :fail."
   []
-  (let [shorts (keep first @(requiring-resolve 'bzg.hop/cli-options))
-        dups   (keep (fn [[flag n]] (when (> n 1) flag)) (frequencies shorts))]
-    (if (empty? dups)
-      (do (println "  OK cli-flags") :pass)
-      (do (println (str "FAIL cli-flags — duplicate short flags: "
-                        (str/join ", " dups)))
-          :fail))))
+  (require 'bzg.hop-unit-test)
+  (let [{:keys [fail error]} (test/run-tests 'bzg.hop-unit-test)]
+    (if (zero? (+ fail error))
+      (do (println "  OK unit tests") :pass)
+      (do (println "FAIL unit tests") :fail))))
+
+(defn- test-golden
+  "Compare one format's output with its expected file; :pass, :fail or :skip."
+  [[fmt ext args]]
+  (let [path (expected-file ext)]
+    (if-not (fs/exists? path)
+      (do (println (str "SKIP " fmt " — run: bb test:generate")) :skip)
+      (let [actual   (run-parser fmt args)
+            expected (slurp path)]
+        (if (= (normalize ext actual) (normalize ext expected))
+          (do (println (str "  OK " fmt " (" ext ")")) :pass)
+          (let [actual-path (str path ".actual")]
+            (spit actual-path actual)
+            (println (str "FAIL " fmt " → diff " path " " actual-path))
+            :fail))))))
 
 (defn generate []
   (fs/create-dirs expected-dir)
@@ -49,24 +63,9 @@
   (println "Done. Review test/bzg/expected/ before committing."))
 
 (defn test-all []
-  (let [results
-        (conj
-         (vec
-          (for [[fmt ext args] formats]
-            (let [path (expected-file ext)]
-              (if-not (fs/exists? path)
-                (do (println (str "SKIP " fmt " — run: bb test:generate")) :skip)
-                (let [actual   (run-parser fmt args)
-                      expected (slurp path)]
-                  (if (= (normalize ext actual) (normalize ext expected))
-                    (do (println (str "  OK " fmt)) :pass)
-                    (let [actual-path (str path ".actual")]
-                      (spit actual-path actual)
-                      (println (str "FAIL " fmt " → diff " path " " actual-path))
-                      :fail)))))))
-         (test-cli-flags))]
-    (let [{:keys [pass fail skip]} (merge {:pass 0 :fail 0 :skip 0} (frequencies results))]
-      (println (str "\n" pass "/" (count results) " passed"
-                    (when (pos? fail) (str ", " fail " failed"))
-                    (when (pos? skip) (str ", " skip " skipped"))))
-      (when (pos? fail) (System/exit 1)))))
+  (let [results                  (conj (mapv test-golden formats) (run-unit-tests))
+        {:keys [pass fail skip]} (merge {:pass 0 :fail 0 :skip 0} (frequencies results))]
+    (println (str "\n" pass "/" (count results) " passed"
+                  (when (pos? fail) (str ", " fail " failed"))
+                  (when (pos? skip) (str ", " skip " skipped"))))
+    (when (pos? fail) (System/exit 1))))

@@ -57,6 +57,27 @@
        (map #(str prefix %))
        (str/join "\n")))
 
+(defn- indent-lines
+  "Indent every non-blank line of s by n spaces."
+  [n s]
+  (let [prefix (repeat-str n " ")]
+    (->> (str/split-lines s)
+         (map #(if (str/blank? %) % (str prefix %)))
+         (str/join "\n"))))
+
+(defn- dedent
+  "Strip the common leading whitespace of the non-blank lines of s, as Org
+   does for the content of blocks and drawers nested in list items."
+  [s]
+  (let [lines (str/split-lines s)
+        n     (->> lines
+                   (remove str/blank?)
+                   (map #(count (re-find #"^\s*" %)))
+                   (reduce min Integer/MAX_VALUE))]
+    (if (or (zero? n) (= n Integer/MAX_VALUE))
+      s
+      (str/join "\n" (map #(if (str/blank? %) % (subs % n)) lines)))))
+
 (def ^:private image-mime-types
   {"png"  "image/png"
    "jpg"  "image/jpeg"
@@ -180,6 +201,13 @@
    :code      {:html ["<code>" "</code>"]     :md ["`" "`"]   :org ["~" "~"]}
    :verbatim  {:html ["<code>" "</code>"]     :md ["`" "`"]   :org ["=" "="]}})
 
+(def ^:private latex-fragment-delimiters
+  "Delimiters of an inline LaTeX fragment, by the :kind organ parsed."
+  {:paren   ["\\(" "\\)"]
+   :bracket ["\\[" "\\]"]
+   :dollars ["$$" "$$"]
+   :dollar  ["$" "$"]})
+
 (defn- wrap-markup
   "Wrap text in the delimiters of inline node type `type` for fmt."
   [type fmt text]
@@ -215,6 +243,10 @@
         :md   (str "[^" (or label "") "]")
         (str "[fn:" (or label "") ":" (or (inline-text children) "") "]")))
     :timestamp (:raw node)
+    :latex-fragment
+    (let [[open close] (latex-fragment-delimiters (:kind node))
+          text         (str open (:value node) close)]
+      (case fmt :html (escape-html text) text))
     ;; fallback
     (or (:value node) "")))
 
@@ -407,7 +439,9 @@ li > p { margin-top: 0.5em; }
                 "\n<script>hljs.highlightAll();</script>"))
          "\n</body>\n</html>")))
 
-(defn- render-table [rows has-header fmt & {:keys [indent] :or {indent ""}}]
+(defn- render-table
+  "Render table rows as an aligned pipe table (org or markdown)."
+  [rows has-header fmt]
   (if (empty? rows) ""
       (let [;; Find max number of columns across all rows
             max-cols      (reduce max 0 (map count rows))
@@ -424,9 +458,9 @@ li > p { margin-top: 0.5em; }
                                    rendered-rows))
             pad-cell      (fn [cell width] (str cell (repeat-str (- width (count cell)) " ")))
             format-row    (fn [row]
-                            (str indent "| " (str/join " | " (map-indexed #(pad-cell %2 (nth col-widths %1 min-table-cell-width)) row)) " |"))
+                            (str "| " (str/join " | " (map-indexed #(pad-cell %2 (nth col-widths %1 min-table-cell-width)) row)) " |"))
             separator     (when (seq col-widths)
-                            (str indent "|-" (str/join (if (= fmt :org) "-+-" "-|-") (map #(repeat-str % "-") col-widths)) "-|"))]
+                            (str "|-" (str/join (if (= fmt :org) "-+-" "-|-") (map #(repeat-str % "-") col-widths)) "-|"))]
         (if (nil? col-widths)
           ""
           (if has-header
@@ -445,24 +479,32 @@ li > p { margin-top: 0.5em; }
          (str/join "\n")
          (format ":PROPERTIES:\n%s\n:END:"))))
 
-(defn- render-list-item [item index ordered level fmt]
-  (let [indent           (repeat-str (* level list-indent-width) " ")
+(defn- render-list-item
+  "Render one list item (org or markdown). Children are rendered at column
+   0 and indented under the marker, so nesting composes: a nested list is
+   indented again by its own parent."
+  [item index ordered fmt]
+  (let [children         (:children item)
         marker           (if ordered (str (inc index) ". ") "- ")
         has-block-child? (and (= fmt :md)
-                              (some #(#{:table :src-block :quote-block :block} (:type %))
-                                    (:children item)))
-        child-sep        (if has-block-child? "\n\n" "\n")
-        children-str     (when (seq (:children item))
-                           (str/join child-sep (map #(render-node % fmt (inc level)) (:children item))))]
+                              (some #(#{:table :src-block :quote-block :block} (:type %)) children))
+        ;; A paragraph child needs a blank line before it, or it is read
+        ;; back as a continuation of the preceding text.
+        separator        (fn [child]
+                           (if (or has-block-child? (= :paragraph (:type child))) "\n\n" "\n"))
+        children-str     (when (seq children)
+                           (indent-lines (if ordered (count marker) list-indent-width)
+                                         (str/join (map #(str (separator %) (render-node % fmt))
+                                                        children))))]
     (if (and (:term item) (= fmt :md))
-      (str indent (render-inline (:term item) :md) "\n"
-           indent ":   " (render-inline (or (:definition item) []) :md)
-           (when children-str (str child-sep children-str)))
+      (str (render-inline (:term item) :md) "\n"
+           ":   " (render-inline (or (:definition item) []) :md)
+           children-str)
       (let [content (if (:term item)
                       (str (render-inline (:term item) fmt) " :: "
                            (render-inline (or (:definition item) []) fmt))
                       (render-inline (:content item) fmt))]
-        (str indent marker content (when children-str (str child-sep children-str)))))))
+        (str marker content children-str)))))
 
 (defn- render-children
   "Render a sequence of child nodes with smart spacing.
@@ -554,22 +596,34 @@ li > p { margin-top: 0.5em; }
                                   levels entries))
                    (repeat-str last-level "</li>\n</ul>\n")
                    "</nav>"))
-      ;; org and markdown
+      ;; markdown (org output never materialises the TOC)
       (->> entries
            (map (fn [{:keys [level title section-number]}]
-                  (let [indent  (repeat-str (* 2 (dec level)) " ")
-                        num-str (when section-number (str section-number " "))
-                        label   (if (= fmt :org)
-                                  (str num-str (render-inline title :org))
-                                  (str "[" num-str (render-inline title :md) "](#" (heading-to-slug title) ")"))]
-                    (str indent "- " label))))
+                  (str (repeat-str (* 2 (dec level)) " ") "- ["
+                       (when section-number (str section-number " "))
+                       (render-inline title :md) "](#" (heading-to-slug title) ")")))
            (str/join "\n")))))
 
-(defn- render-document [node fmt level]
+(defn- org-keyword-line
+  "#+KEY: value line; a blank value gives a bare #+KEY:, as in the source."
+  [k v]
+  (str "#+" (upper-name k) ":" (when (non-blank? (str v)) (str " " v))))
+
+(defn- render-meta-org
+  "Re-emit the document preamble as #+KEY: lines. organ keeps every
+   preamble keyword in :meta, in file order; a repeated keyword holds a
+   vector of values."
+  [meta]
+  (->> meta
+       (mapcat (fn [[k v]] (map #(org-keyword-line k %) (if (vector? v) v [v]))))
+       (str/join "\n")))
+
+(defn- render-document [node fmt]
   (let [{toc? :toc h :h} (:parsed-options node)
-        ;; toc can be true (use H:) or an integer depth
+        ;; toc can be true (use H:) or an integer depth; org output keeps
+        ;; the #+OPTIONS line instead of materialising the TOC
         toc-depth   (cond (integer? toc?) toc? (integer? h) h :else 6)
-        toc-str     (when toc?
+        toc-str     (when (and toc? (not= fmt :org))
                       (render-toc (collect-toc-entries (:children node) toc-depth) fmt))]
     (case fmt
       :html (let [footnotes      (filter #(= (:type %) :footnote-def) (:children node))
@@ -582,29 +636,18 @@ li > p { margin-top: 0.5em; }
                   main-content   (str title-html toc-html
                                       (->> (:children node)
                                            (remove #(= (:type %) :footnote-def))
-                                           (map #(render-node % fmt level))
+                                           (map #(render-node % fmt))
                                            (str/join "\n")))
                   footnotes-html (when (seq footnotes)
                                    (str "<aside class=\"footnotes\">\n"
-                                        (str/join "\n" (map #(render-node % fmt level) footnotes))
+                                        (str/join "\n" (map #(render-node % fmt) footnotes))
                                         "\n</aside>"))]
               (html-template (or (inline-text (:title node)) "Untitled Document")
                              (str main-content (when footnotes-html (str "\n" footnotes-html)))))
-      :org  (let [meta     (:meta node)
-                  meta-str (cond
-                             (seq (:_raw meta)) (str/join "\n" (:_raw meta))
-                             (seq (:_order meta))
-                             (str/join "\n"
-                                       (keep (fn [k]
-                                               (let [v (get meta k)]
-                                                 (when (non-blank? (str v))
-                                                   (if (vector? v)
-                                                     (str/join "\n" (map #(str "#+" (upper-name k) ": " %) v))
-                                                     (str "#+" (upper-name k) ": " v)))))
-                                             (:_order meta)))
-                             :else              nil)]
+      ;; Org output is source-faithful: the #+OPTIONS line carries the TOC
+      ;; and numbering intent, so neither is materialised in the text.
+      :org  (let [meta-str (render-meta-org (:meta node))]
               (str (when (seq meta-str) (str meta-str "\n\n"))
-                   (when toc-str (str toc-str "\n\n"))
                    (render-children (:children node) fmt)))
       ;; default: markdown
       (let [title (if-let [t (:title node)] (str "# " (render-inline t :md) "\n\n") "")]
@@ -627,20 +670,22 @@ li > p { margin-top: 0.5em; }
   (keep (fn [kw] (when-let [iso (get planning kw)] [kw iso])) planning-order))
 
 (defn- iso->org-timestamp
-  "Active Org timestamp for an ISO value (2025-01-15T10:30, or a start/end
-   range), with an optional repeater cookie: <2025-01-15 10:30-11:00 +1w>.
-   A range with a time on both sides shares one timestamp; otherwise it is written
-   as <start>--<end>."
-  [iso repeater]
-  (let [rep-str  (if repeater (str " " repeater) "")
-        single   (fn [s] (str "<" (str/replace s "T" " ") rep-str ">"))
-        timed?   #(str/includes? % "T")]
-    (if (str/includes? iso "/")
-      (let [[start end] (str/split iso #"/")]
-        (if (and (timed? start) (timed? end))
-          (str "<" (str/replace start "T" " ") "-" (second (str/split end #"T")) rep-str ">")
-          (str (single start) "--" (single end))))
-      (single iso))))
+  "Org timestamp for an ISO value (2025-01-15T10:30, or a start/end range),
+   with an optional repeater cookie: <2025-01-15 10:30-11:00 +1w>. A range
+   with a time on both sides shares one timestamp; otherwise it is written
+   as <start>--<end>. inactive? gives [brackets], as Org writes CLOSED."
+  ([iso repeater] (iso->org-timestamp iso repeater false))
+  ([iso repeater inactive?]
+   (let [[open close] (if inactive? ["[" "]"] ["<" ">"])
+         rep-str      (if repeater (str " " repeater) "")
+         single       (fn [s] (str open (str/replace s "T" " ") rep-str close))
+         timed?       #(str/includes? % "T")]
+     (if (str/includes? iso "/")
+       (let [[start end] (str/split iso #"/")]
+         (if (and (timed? start) (timed? end))
+           (str open (str/replace start "T" " ") "-" (second (str/split end #"T")) rep-str close)
+           (str (single start) "--" (single end))))
+       (single iso)))))
 
 (defn- render-planning
   "Render planning info (CLOSED/SCHEDULED/DEADLINE) in the given format."
@@ -664,7 +709,8 @@ li > p { margin-top: 0.5em; }
           :org  (str/join " "
                           (map (fn [[kw iso]]
                                  (str (str/upper-case (name kw)) ": "
-                                      (iso->org-timestamp iso (planning-repeat planning kw))))
+                                      (iso->org-timestamp iso (planning-repeat planning kw)
+                                                          (= kw :closed))))
                                items))
           ;; markdown
           (str/join " "
@@ -701,12 +747,11 @@ li > p { margin-top: 0.5em; }
                   stars              (repeat-str (:level node) "*")
                   todo-str           (when (:todo node) (str (name (:todo node)) " "))
                   priority-str       (when (:priority node) (str "[#" (:priority node) "] "))
-                  sec-num-str        (when-let [sn (:section-number node)] (str sn " "))
                   tags-str           (when (seq (:tags node)) (str " :" (str/join ":" (:tags node)) ":"))
                   props-str          (render-properties-org (:properties node))
                   children-str       (render-children (:children node) fmt)]
               (str blanks-before
-                   stars " " todo-str priority-str sec-num-str (render-inline (:title node) :org) tags-str
+                   stars " " todo-str priority-str (render-inline (:title node) :org) tags-str
                    (when planning-str (str "\n" planning-str))
                    (when props-str (str "\n" props-str))
                    blanks-after-title
@@ -732,28 +777,10 @@ li > p { margin-top: 0.5em; }
       :html (if-let [img-node (and (:affiliated node) (extract-single-image-node content))]
               (render-link-node img-node :html (:affiliated node))
               (str "<p>" (render-inline content :html) "</p>"))
-      :org  (let [affiliated  (:affiliated node)
-                  content-str (render-inline content :org)
-                  attr-lines  (when affiliated
-                                (str/join "\n"
-                                          (concat
-                                           (when-let [caption (:caption affiliated)]
-                                             [(str "#+caption: " caption)])
-                                           (when-let [aff-name (:name affiliated)]
-                                             [(str "#+name: " aff-name)])
-                                           (for [[attr-type attrs] (:attr affiliated)
-                                                 :when             (seq attrs)]
-                                             (str "#+attr_" (name attr-type) ": "
-                                                  (str/join " " (for [[k v] attrs]
-                                                                  (if (str/includes? v " ")
-                                                                    (str ":" (name k) " \"" v "\"")
-                                                                    (str ":" (name k) " " v)))))))))]
-              (if (seq attr-lines)
-                (str attr-lines "\n" content-str)
-                content-str))
-      (render-inline content :md))))
+      ;; org: affiliated keywords are re-emitted by render-node
+      (render-inline content fmt))))
 
-(defn- render-list-node [node fmt level]
+(defn- render-list-node [node fmt]
   (case fmt
     :html (let [tag        (cond (:description node) "dl"
                                  (:ordered node)     "ol"
@@ -764,10 +791,10 @@ li > p { margin-top: 0.5em; }
             (str "<" tag ">\n" items-html "\n</" tag ">"))
     (let [sep (if (and (= fmt :md) (:description node)) "\n\n" "\n")]
       (->> (:items node)
-           (map-indexed (fn [idx item] (render-list-item item idx (:ordered node) level fmt)))
+           (map-indexed (fn [idx item] (render-list-item item idx (:ordered node) fmt)))
            (str/join sep)))))
 
-(defn- render-list-item-node [node fmt level]
+(defn- render-list-item-node [node fmt]
   (if (= fmt :html)
     (let [children-html (when (seq (:children node))
                           (str "\n" (str/join "\n" (map #(render-node % fmt) (:children node)))))]
@@ -775,32 +802,28 @@ li > p { margin-top: 0.5em; }
         (str "<dt>" (render-inline (:term node) :html) "</dt>\n<dd>"
              (render-inline (:definition node) :html) children-html "</dd>")
         (str "<li>" (render-inline (:content node) :html) children-html "</li>")))
-    (render-list-item node 0 false level fmt)))
+    (render-list-item node 0 false fmt)))
 
-(defn- render-table-node [node fmt & [level]]
-  (let [level (or level 0)]
+(defn- render-table-node [node fmt]
+  (let [rows       (:rows node)
+        has-header (:has-header node)]
     (if (= fmt :html)
-      (let [rows       (:rows node)
-            has-header (:has-header node)
-            cell       (fn [tag content] (str "<" tag ">" (render-inline content :html) "</" tag ">"))]
+      (let [cell (fn [tag content] (str "<" tag ">" (render-inline content :html) "</" tag ">"))]
         (if (empty? rows) ""
             (str "<table>\n"
                  (when has-header
                    (str "  <thead>\n    <tr>\n      "
-                        (str/join "" (map #(cell "th" %) (first rows)))
+                        (str/join (map #(cell "th" %) (first rows)))
                         "\n    </tr>\n  </thead>\n"))
                  "  <tbody>\n"
                  (str/join "\n"
                            (map (fn [row]
                                   (str "    <tr>\n      "
-                                       (str/join "" (map #(cell "td" %) row))
+                                       (str/join (map #(cell "td" %) row))
                                        "\n    </tr>"))
                                 (if has-header (rest rows) rows)))
                  "\n  </tbody>\n</table>")))
-      (let [indent (if (and (= fmt :md) (pos? level))
-                     (repeat-str (* level list-indent-width) " ")
-                     "")]
-        (render-table (:rows node) (:has-header node) fmt :indent indent)))))
+      (render-table rows has-header fmt))))
 
 (defn- render-src-block [node fmt]
   (case fmt
@@ -808,13 +831,11 @@ li > p { margin-top: 0.5em; }
                (when (non-blank? (:language node))
                  (str " class=\"language-" (escape-html (:language node)) "\""))
                ">" (escape-html (:content node)) "</code></pre>")
-    :org  (let [lang            (:language node)
-                args            (:args node)
-                escaped-content (escape-block-content (:content node))]
+    :org  (let [;; organ's :args is the whole header line (language included)
+                header (if (non-blank? (:args node)) (:args node) (:language node))]
             (str "#+BEGIN_SRC"
-                 (when (non-blank? lang) (str " " lang))
-                 (when (non-blank? args) (str " " args))
-                 "\n" escaped-content "\n#+END_SRC"))
+                 (when (non-blank? header) (str " " header))
+                 "\n" (escape-block-content (:content node)) "\n#+END_SRC"))
     (str "```" (or (:language node) "") "\n" (:content node) "\n```")))
 
 (defn- render-quote-block [node fmt]
@@ -823,13 +844,10 @@ li > p { margin-top: 0.5em; }
                (str/join "\n" (map #(render-node % fmt) (:children node)))
                "\n</blockquote>")
     :org  (str "#+BEGIN_QUOTE\n"
-               (escape-block-content
-                (str/join "\n" (map #(render-node % :org) (:children node))))
+               (escape-block-content (render-children (:children node) :org))
                "\n#+END_QUOTE")
-    (->> (:children node)
-         (map #(render-node % :md))
-         (mapcat str/split-lines)
-         (map #(str "> " %))
+    (->> (str/split-lines (render-children (:children node) :md))
+         (map #(if (str/blank? %) ">" (str "> " %)))
          (str/join "\n"))))
 
 (defn- render-comment-node [node fmt]
@@ -893,29 +911,70 @@ li > p { margin-top: 0.5em; }
     :org (prefix-lines "#+latex: " (:content node))
     ""))
 
+(defn- render-affiliated-org
+  "Re-emit a node's affiliated keywords (#+caption:, #+name:, #+attr_*:)
+   as the lines that precede it in Org."
+  [affiliated]
+  (when affiliated
+    (->> (concat
+          (when-let [caption (:caption affiliated)] [(str "#+caption: " caption)])
+          (when-let [aff-name (:name affiliated)] [(str "#+name: " aff-name)])
+          (for [[attr-type attrs] (:attr affiliated)
+                :when             (seq attrs)]
+            (str "#+attr_" (name attr-type) ": "
+                 (str/join " " (for [[k v] attrs]
+                                 (if (str/includes? v " ")
+                                   (str ":" (name k) " \"" v "\"")
+                                   (str ":" (name k) " " v)))))))
+         (str/join "\n")
+         not-empty)))
+
 (defn- render-node
-  ([node fmt] (render-node node fmt 0))
-  ([node fmt level]
-   (case (:type node)
-     :document        (render-document node fmt level)
-     :section         (render-section node fmt)
-     :paragraph       (render-paragraph node fmt)
-     :list            (render-list-node node fmt level)
-     :list-item       (render-list-item-node node fmt level)
-     :table           (render-table-node node fmt level)
-     :src-block       (render-src-block node fmt)
-     :quote-block     (render-quote-block node fmt)
-     :property-drawer (if (= fmt :org) (render-properties-org (:properties node)) "")
-     :comment         (render-comment-node node fmt)
-     :fixed-width     (render-fixed-width node fmt)
-     :footnote-def    (render-footnote-def-node node fmt)
-     :block           (render-generic-block node fmt)
-     :html-line       (render-html-line node fmt)
-     :latex-line      (render-latex-line node fmt)
-     ;; Default case for warnings or unknown types
-     (if (:warning node)
-       (str "<!-- Warning at line " (:error-line node) ": " (:warning node) " -->")
-       ""))))
+  "Render a block-level node in fmt (:html, :md or :org). Returns \"\" for
+   nodes a format does not show."
+  [node fmt]
+  (let [rendered
+        (case (:type node)
+          :document        (render-document node fmt)
+          :section         (render-section node fmt)
+          :paragraph       (render-paragraph node fmt)
+          :list            (render-list-node node fmt)
+          :list-item       (render-list-item-node node fmt)
+          :table           (render-table-node node fmt)
+          :src-block       (render-src-block node fmt)
+          :quote-block     (render-quote-block node fmt)
+          :property-drawer (if (= fmt :org) (render-properties-org (:properties node)) "")
+          :comment         (render-comment-node node fmt)
+          :fixed-width     (render-fixed-width node fmt)
+          :footnote-def    (render-footnote-def-node node fmt)
+          :block           (render-generic-block node fmt)
+          :html-line       (render-html-line node fmt)
+          :latex-line      (render-latex-line node fmt)
+          ;; A #+KEY: value line outside the preamble (organ 3.4+): org only.
+          :keyword         (if (= fmt :org) (org-keyword-line (:key node) (:value node)) "")
+          ;; Drawers (:LOGBOOK: etc.) are kept in org output only, as Org's own
+          ;; exporters drop them by default.
+          :drawer          (if (= fmt :org)
+                             (str ":" (str/upper-case (:drawer-name node)) ":\n"
+                                  (when (non-blank? (:content node))
+                                    (str (dedent (:content node)) "\n"))
+                                  ":END:")
+                             "")
+          ;; LaTeX environments are emitted verbatim (\begin..\end lines included),
+          ;; as Org does, for MathJax-style rendering downstream.
+          :latex-environment (if (= fmt :html)
+                               (str "<div class=\"latex-environment\">"
+                                    (escape-html (:content node)) "</div>")
+                               (:content node))
+          ;; Default case for warnings or unknown types
+          (if (:warning node)
+            (str "<!-- Warning at line " (:error-line node) ": " (:warning node) " -->")
+            ""))
+        ;; Org output keeps the affiliated keywords of any element
+        attr-lines (when (= fmt :org) (render-affiliated-org (:affiliated node)))]
+    (if (and attr-lines (not (str/blank? rendered)))
+      (str attr-lines "\n" rendered)
+      rendered)))
 
 ;; Section ID assignment (deduplication)
 (defn- assign-section-ids
