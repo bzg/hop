@@ -6,76 +6,131 @@
 : (='.'=)
 : (")_(")
 
-Hop! Org Parser -- quickly and easily render and export Org files to MD, HTML, Org, JSON, EDN, YAML and ICS.
+Hop! Org Parser -- render and export Org files to Markdown, HTML, Org,
+JSON, EDN, YAML and ICS from the command line.
 
-Built on [[https://github.com/bzg/organ][organ]], a Clojure Org parser.
+Built on [[https://github.com/bzg/organ][organ]], a Clojure Org parser: =hop= parses the file once into an
+AST, applies the filters, then renders the AST in the requested format.
 
 * Usage
 
-: hop notes.org                               # AST as JSON, contents rendered as Markdown
-: hop -f html notes.org                       # Export as HTML
-: hop -f md notes.org                         # Export as Markdown
-: hop -f org notes.org                        # Export as Org (unwrapped)
-: hop -f edn notes.org                        # Export as EDN
-: hop -f yaml notes.org                       # Export as YAML
-: hop -f ics notes.org                        # Export scheduled (VEVENT) and deadline (VTODO) items as ICS
-: hop -f ics-anon notes.org                   # Scheduled items only, anonymised as "Busy" free/busy blocks
+: hop [options] <org-file>        # "-" reads the Org text from stdin
 
-Render the AST /content/ in a different format:
+** Output formats (=-f=)
 
-: hop -r html notes.org                       # AST as JSON with HTML-rendered contents
-: hop -r org notes.org                        # AST as JSON with Org-rendered contents
+| Format     | Output                                                                 |
+|------------+------------------------------------------------------------------------|
+| =json=     | The AST, text fields rendered as Markdown (default)                    |
+| =edn=      | Same AST as EDN                                                        |
+| =yaml=     | Same AST as YAML                                                       |
+| =md=       | Markdown document                                                      |
+| =html=     | Standalone HTML page (inline CSS, highlight.js when there is code)     |
+| =org=      | Org document, unwrapped and normalised, faithful to the source         |
+| =ics=      | iCalendar: =SCHEDULED= items as =VEVENT=, =DEADLINE= + TODO as =VTODO= |
+| =ics-anon= | iCalendar: =SCHEDULED= items only, anonymised as "Busy" blocks         |
 
-Filters:
+: hop notes.org                   # AST as JSON
+: hop -f html notes.org           # HTML page
+: hop -f org notes.org            # Org, re-exported
+: hop -r org notes.org            # AST as JSON, text fields rendered as Org (-r: md, html, org)
 
-: hop -l 2 notes.org                          # Headlines with level <= 2
-: hop -L 2 notes.org                          # Same, deeper headings rendered as bold
-: hop -t "TODO" notes.org                     # Title matches regex
-: hop -T "Projects" notes.org                 # Any ancestor title matches regex
-: hop -i "section[0-9]+" notes.org            # ID or CUSTOM_ID matches regex
-: hop -I "chapter\d+" notes.org               # Any ancestor ID matches regex
+The AST formats keep organ's node structure (=:section=, =:paragraph=,
+=:list=, =:table=, =:src-block=, =:drawer=, ...), with inline markup
+already rendered in the =-r= format.
 
-HTML export with CSS themes:
+** Filters
 
-: hop -c https://example.com/style.css -f html notes.org  # Use a remote CSS URL
-: hop -c file:///path/to/style.css -f html notes.org      # Inline a local file via file:// URL
-: hop -c custom.css -f html notes.org                     # Inline a local .css file
-: hop -c ../styles/theme.css -f html notes.org            # Inline via relative path
-: hop -c /home/user/theme.css -f html notes.org           # Inline via absolute path
-: hop -c org -f html notes.org                            # Use "org" pico-theme from CDN
+Filters select headings; the rest of the document is dropped.
 
-ICS export options (=ics= and =ics-anon=):
+: hop -l 2 notes.org              # Headings of level <= 2
+: hop -L 2 notes.org              # Same, deeper headings rendered as bold paragraphs
+: hop -t "Release" notes.org      # Heading title matches the regex
+: hop -T "Projects" notes.org     # Any ancestor title matches the regex (keeps its subtree)
+: hop -i "section[0-9]+" notes.org  # ID or CUSTOM_ID property matches the regex
+: hop -I "chapter\d+" notes.org   # Any ancestor ID matches the regex (keeps its subtree)
 
-- =-w/--weeks=             # weeks ahead to scan (unbounded unless set)
-- =-R/--reference-date=    # window start date, YYYY-MM-DD (today when only -w is set)
-- =-d/--default-duration=  # minutes for events with no end time (only added when set)
-- =-z/--time-zone=         # timezone anchoring the Org timestamps (default: system timezone)
-- =-a/--all-day=           # also emit all-day entries (excluded by default; see below for =ics-anon=)
+** DONE handling (every format)
 
-For =ics= and =ics-anon=, =DEADLINE= timestamps are due dates (i.e.
-=VTODO=): they never count as "busy", since a due date reserves no
-time. =SCHEDULED= timestamps are =VEVENT=, anonymised as "Busy" blocks
-by =ics-anon=. When a =SCHEDULED= entry has a date but no time of day,
-=ics-anon= admits it as an all-day busy entry only with the =-a=
-(=--all-day=) option, and only when its heading bears no TODO keyword.
+Subtrees whose heading is in a DONE state are stripped from every
+output; =-k/--keep-done= keeps them. The DONE set comes from the
+=#+TODO:=-style directives of the file (Org's =TODO=/=DONE= defaults
+otherwise), extended with =-D=:
 
-Both formats emit UTC datetimes, anchored in the =-z= timezone.
+: hop -D CANX,CANCELED notes.org  # Extra DONE keywords, comma-separated
+: hop -k notes.org                # Keep DONE subtrees
 
-TODO keywords come from =#+TODO:=-style directives in the file (Org's
-=TODO=/=DONE= defaults otherwise), plus any =-D= extras.
+** HTML export
 
-Other export options:
+: hop -f html -c https://example.com/style.css notes.org  # Link a remote stylesheet
+: hop -f html -c file:///path/to/style.css notes.org      # Inline a local file (file:// URL)
+: hop -f html -c ../styles/theme.css notes.org            # Inline a local .css file (any path)
+: hop -f html -c org notes.org                            # Link the "org" theme from pico-themes
+: hop -f html -b https://base.io/ index.org               # Prepend a base URL to relative links
 
-: hop -D CANX,CANCELED notes.org              # Extra DONE keywords, comma-separated
-: hop -k notes.org                            # Keep DONE subtrees (stripped by default)
-: hop -b https://base.io -f html index.org    # Prepend base URL to relative links
-: hop -n notes.org                            # Preserve original line breaks
+A bare theme name resolves to [[https://github.com/bzg/pico-themes][pico-themes]] on jsDelivr; a =.css= path
+that does not exist is an error, not a CDN fall-back. Local images
+(=[[file:img.png]]=) are inlined as data URIs in HTML and Markdown.
 
-Statistics:
+=#+OPTIONS= is honoured for HTML and Markdown: =toc:t= (or =toc:N=)
+emits a table of contents, =num:t= numbers the headings, =H:N= bounds
+the TOC depth. Section anchors come from =CUSTOM_ID= or a slug of the
+title, deduplicated across the document. Footnotes are gathered at the
+end of the page.
 
-: hop -s notes.org                            # Display document statistics
+** Org export
 
-Check =hop --help= for all options.
+=-f org= aims at a faithful round trip: parse → export → parse yields
+the same document. The =#+= preamble (=#+TITLE:=, =#+OPTIONS:=,
+=#+TODO:=, =#+STARTUP:=, ...) is re-emitted in file order, drawers,
+LaTeX fragments and environments, planning lines, property drawers and
+tables nested in lists are preserved. Because the =#+OPTIONS= line
+carries the intent, the TOC and section numbers are /not/ written into
+the text.
+
+: hop -f org notes.org            # Lines are unwrapped (one paragraph per line)
+: hop -f org -n notes.org         # Keep the original line breaks
+
+=#+KEY:= lines found later in the body (a =#+TODO:= or =#+PROPERTY:=
+under a heading) are kept in place as well; they are dropped from
+every other format, as they carry no rendering of their own.
+
+** ICS export (=ics= and =ics-anon=)
+
+| Option                  | Effect                                                                      |
+|-------------------------+-----------------------------------------------------------------------------|
+| =-w/--weeks N=          | Weeks ahead to scan (unbounded unless set)                                  |
+| =-R/--reference-date=   | Window start, =YYYY-MM-DD= (today when only =-w= is set; reproducible runs) |
+| =-d/--default-duration= | Minutes for events without an end time (none added unless set)              |
+| =-z/--time-zone=        | Zone anchoring the Org timestamps (system zone by default), validated       |
+| =-a/--all-day=          | Also emit all-day entries (excluded by default)                             |
+
+=SCHEDULED= timestamps become =VEVENT=; a =DEADLINE= under a heading
+with a TODO keyword becomes a =VTODO= (a due date reserves no time, so
+it never counts as busy). Repeaters
+(=+1w=) become =RRULE=; with =-w=, =ics-anon= expands them over the
+window and merges overlapping blocks instead. Inline timestamps and
+=CLOSED= are not exported. UIDs derive from the entry itself (title,
+timestamp, kind), so reordering the file does not churn them. Both
+formats emit UTC datetimes, anchored in the =-z= zone, no =VTIMEZONE=.
+
+For =ics-anon=, an all-day =SCHEDULED= entry counts as busy only with
+=-a= and only when its heading bears no TODO keyword: a "Vacation"
+heading blocks its day, a task merely scheduled on a date does not.
+
+: hop -f ics -z Europe/Paris -d 45 notes.org               # 45-minute default events
+: hop -f ics-anon -R 2026-01-05 -w 12 -a notes.org         # 12-week free/busy from a fixed date
+
+** Other options
+
+: hop -n notes.org                # Preserve original line breaks (every format)
+: hop -s notes.org                # Document statistics (sections, words, images, planning, ...)
+: hop -v                          # Version, as installed by bbin
+: hop --help                      # Every option
+
+Parse warnings (unterminated blocks or drawers, invalid timestamps) go
+to stderr, the document is still rendered. Invalid option values (an
+unknown time zone, a non-numeric duration) and unreadable files exit
+with status 1.
 
 * Install
 
@@ -85,20 +140,33 @@ Assuming [[https://github.com/babashka/bbin][bbin]] is installed:
 
 * Requirements
 
-=hop= is a [[https://clojure.org][Clojure]] [[https://babashka.org][Babashka]] script.
+=hop= is a [[https://clojure.org][Clojure]] [[https://babashka.org][Babashka]] script; its only dependency is organ.
 
 : brew install babashka/brew/bbin
 
 * Development
 
-To run =hop= directly from the source without installing via =bbin=:
+Run =hop= from the source, without installing it:
 
 : ~$ bb -m bzg.hop -f md notes.org
 
+The whole program lives in =src/bzg/hop.clj=: inline rendering, block
+rendering (=render-node= dispatches on the node type), ICS export,
+statistics, then the CLI. Each renderer takes the format as an
+argument (=:html=, =:md=, =:org=) rather than existing in three copies.
+
 * Test
 
-: ~$ bb test:generate
-: ~$ bb test
+: ~$ bb test              # golden files + unit tests
+: ~$ bb test:generate     # regenerate the golden files after an intended output change
+
+=bb test= compares every format's output for =test/bzg/test.org= with
+=test/bzg/expected/= (ICS =DTSTAMP= lines are normalised), then runs
+the =clojure.test= suite in =test/bzg/hop_unit_test.clj=: pure helpers
+(RFC 5545 folding, slugs, =#+OPTIONS= parsing, TOC nesting, repeater
+windows, interval merging), CLI option typing and short-flag
+uniqueness, and the Org round trip. Review the golden diffs before
+committing them.
 
 * Contributing
 
