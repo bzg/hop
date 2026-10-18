@@ -482,6 +482,13 @@ li > p { margin-top: 0.5em; }
       (.append sb r))
     (.toString sb)))
 
+(defn- meta-string
+  "A document :meta value as one string. A repeated #+KEY: line gives a
+   vector, which Org joins with a space."
+  [ast k]
+  (let [v (get-in ast [:meta k])]
+    (if (vector? v) (str/join " " v) v)))
+
 ;; #+OPTIONS parsing
 (defn- parse-options-string
   "Parse an #+OPTIONS: value like 'toc:t H:2 num:t' into a map
@@ -499,7 +506,7 @@ li > p { margin-top: 0.5em; }
 (defn- get-export-options
   "Extract parsed export options from the AST metadata."
   [ast]
-  (parse-options-string (get-in ast [:meta :options])))
+  (parse-options-string (meta-string ast :options)))
 
 (defn- collect-toc-entries
   "Recursively collect TOC entries from section nodes up to max-depth.
@@ -580,7 +587,7 @@ li > p { margin-top: 0.5em; }
            (str/join "\n")))))
 
 (defn- render-document [node fmt level]
-  (let [options     (or (:parsed-options node) (parse-options-string (get-in node [:meta :options])))
+  (let [options     (or (:parsed-options node) (parse-options-string (meta-string node :options)))
         toc?        (get options :toc)
         toc-depth   (let [h (get options :h 6)
                           t (get options :toc)]
@@ -592,7 +599,7 @@ li > p { margin-top: 0.5em; }
       :html (let [footnotes      (filter #(= (:type %) :footnote-def) (:children node))
                   title-html     (when-let [t (:title node)]
                                    (str "<header>\n<h1 class=\"document-title\">" (render-inline t :html) "</h1>\n"
-                                        (when-let [st (get-in node [:meta :subtitle])]
+                                        (when-let [st (meta-string node :subtitle)]
                                           (str "<p class=\"subtitle\">" (render-inline (parse-inline st) :html) "</p>\n"))
                                         "</header>\n"))
                   toc-html       (when toc-str (str toc-str "\n"))
@@ -1080,6 +1087,12 @@ li > p { margin-top: 0.5em; }
    :month java.time.temporal.ChronoUnit/MONTHS
    :year  java.time.temporal.ChronoUnit/YEARS})
 
+(defn- repeating?
+  "True for a repeater that actually repeats: a positive count and a known
+   unit (organ yields {:n 0 ...} for a +0d cookie, which would divide by 0)."
+  [{:keys [n unit]}]
+  (boolean (and n (pos? n) (chrono-units unit))))
+
 (defn- ics-window
   "Optional [win-s win-e] LocalDateTime bounds from --reference-date/--weeks,
    nil when neither is set. --reference-date alone leaves the window
@@ -1110,7 +1123,7 @@ li > p { margin-top: 0.5em; }
     (if (.isBefore start win-s)
       ;; starts before the window: only a repeater can reach it
       (boolean
-       (when (and n (chrono-units unit))
+       (when (repeating? repeater)
          (let [gap (.between (chrono-units unit) start win-s)
                k0  (* n (quot gap n))]
            (->> (iterate #(+ % n) k0)
@@ -1165,9 +1178,9 @@ li > p { margin-top: 0.5em; }
   "Convert a parsed Org repeater ({:n :unit :kind}, as produced by
    organ/active-timestamps) to an ICS RRULE string. The shift kind (+/++/.+)
    has no RRULE equivalent and is ignored."
-  [{:keys [n unit]}]
-  (when-let [freq (and n unit (ics-rrule-freq unit))]
-    (str "RRULE:FREQ=" freq ";INTERVAL=" n)))
+  [{:keys [n unit] :as repeater}]
+  (when (repeating? repeater)
+    (str "RRULE:FREQ=" (ics-rrule-freq unit) ";INTERVAL=" n)))
 
 (defn- ics-next-day
   "Given an ICS VALUE=DATE string like '20250115', return the next day '20250116'.
@@ -1191,9 +1204,7 @@ li > p { margin-top: 0.5em; }
    Datetimes are anchored in --time-zone (system timezone by default) and
    emitted as UTC."
   [ast done-keywords opts]
-  (let [tz     (if-let [z (:time-zone opts)]
-                 (java.time.ZoneId/of z)
-                 (java.time.ZoneId/systemDefault))
+  (let [tz     (or (:time-zone opts) (java.time.ZoneId/systemDefault))
         [win-s win-e] (ics-window opts tz)
         fmt-dt (fn [s] (.format utc-dtf
                                 (.toInstant
@@ -1269,9 +1280,7 @@ li > p { margin-top: 0.5em; }
 (defn- busy-config
   "Build the busy-mode config map from parsed CLI options."
   [opts]
-  {:tz             (if-let [z (:time-zone opts)]
-                     (java.time.ZoneId/of z)
-                     (java.time.ZoneId/systemDefault))
+  {:tz             (or (:time-zone opts) (java.time.ZoneId/systemDefault))
    :event-duration (:default-duration opts)
    :all-day        (boolean (:all-day opts))})
 
@@ -1314,7 +1323,7 @@ li > p { margin-top: 0.5em; }
   (let [[start-ldt end-ldt] (entry->base entry event-duration)
         {:keys [n unit]}    (:repeater entry)
         in-window?          (fn [zs ze] (and (.isBefore zs win-e) (.isAfter ze win-s)))]
-    (if (and n (chrono-units unit))
+    (if (repeating? (:repeater entry))
       (let [k0 (first-repeat-offset start-ldt end-ldt (.toLocalDateTime win-s) n unit)]
         (->> (iterate #(+ % n) k0)
              (take 5000) ; safety guard
@@ -1413,7 +1422,7 @@ li > p { margin-top: 0.5em; }
         (render-busy-ics blocks)))))
 
 (defn- prepare-ast [ast]
-  (let [options (parse-options-string (get-in ast [:meta :options]))]
+  (let [options (parse-options-string (meta-string ast :options))]
     (-> ast
         (assoc :parsed-options options)
         number-sections
@@ -1636,7 +1645,8 @@ li > p { margin-top: 0.5em; }
     :parse-fn #(Integer/parseInt %) :validate [pos? "Must be positive"]]
    ["-w" "--weeks N" "weeks ahead to scan (unbounded unless set; a bounded window lets ics-anon expand and merge repeaters)"
     :parse-fn #(Integer/parseInt %) :validate [pos? "Must be positive"]]
-   ["-z" "--time-zone ZONE" "timezone anchoring the org timestamps (default: system timezone); output datetimes are UTC"]
+   ["-z" "--time-zone ZONE" "timezone anchoring the org timestamps (default: system timezone); output datetimes are UTC"
+    :parse-fn #(java.time.ZoneId/of %)]
    ["-R" "--reference-date DATE" "window start date, YYYY-MM-DD (today when only -w is set; useful for reproducible output)"
     :parse-fn #(java.time.LocalDate/parse %)]])
 
@@ -1744,7 +1754,7 @@ li > p { margin-top: 0.5em; }
                       "yaml" (println (format-ast-as-yaml rendered-ast))))))
               (System/exit 0)))
           (catch clojure.lang.ExceptionInfo e
-            (exit-error (str "Parse error: " (.getMessage e))))
+            (exit-error (.getMessage e)))
           (catch Exception e
             (binding [*out* *err*]
               (println "Error:" (.getMessage e))
