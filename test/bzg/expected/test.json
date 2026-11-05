@@ -92,11 +92,13 @@
               "type" : "list-item"
             } ],
             "ordered" : false,
+            "description" : false,
             "type" : "list"
           } ],
           "type" : "list-item"
         } ],
         "ordered" : false,
+        "description" : false,
         "type" : "list"
       } ],
       "type" : "section",
@@ -118,6 +120,7 @@
           "type" : "list-item"
         } ],
         "ordered" : true,
+        "description" : false,
         "type" : "list"
       } ],
       "type" : "section",
@@ -142,10 +145,7 @@
           "type" : "list-item"
         } ],
         "ordered" : false,
-        "description" : [ {
-          "type" : "text",
-          "value" : "Emacs"
-        } ],
+        "description" : true,
         "type" : "list"
       } ],
       "type" : "section",

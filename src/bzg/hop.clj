@@ -482,10 +482,14 @@ li > p { margin-top: 0.5em; }
 (defn- render-list-item
   "Render one list item (org or markdown). Children are rendered at column
    0 and indented under the marker, so nesting composes: a nested list is
-   indented again by its own parent."
-  [item index ordered fmt]
+   indented again by its own parent. number is the item's number in an
+   ordered list (see list-numbers); an item that restarts the numbering
+   gets back its [@N] cookie in org."
+  [item number ordered fmt]
   (let [children         (:children item)
-        marker           (if ordered (str (inc index) ". ") "- ")
+        marker           (if ordered (str number ". ") "- ")
+        cookie           (when (and ordered (= fmt :org) (:counter item))
+                           (str "[@" (:counter item) "] "))
         has-block-child? (and (= fmt :md)
                               (some #(#{:table :src-block :quote-block :block} (:type %)) children))
         ;; A paragraph child needs a blank line before it, or it is read
@@ -504,21 +508,26 @@ li > p { margin-top: 0.5em; }
                       (str (render-inline (:term item) fmt) " :: "
                            (render-inline (or (:definition item) []) fmt))
                       (render-inline (:content item) fmt))]
-        (str marker content children-str)))))
+        (str marker cookie content children-str)))))
 
 (defn- render-children
   "Render a sequence of child nodes with smart spacing.
    Sections handle their own spacing via :blank-lines-before."
   [children fmt]
-  (let [separator (fn [child]
-                    (if (or (= (:type child) :section) (= fmt :html)) "\n" "\n\n"))]
-    (->> children
-         (keep (fn [child]
-                 (let [r (render-node child fmt)]
-                   (when-not (str/blank? r) [child r]))))
-         (map-indexed (fn [i [child r]]
-                        (if (zero? i) r (str (separator child) r))))
-         (str/join))))
+  (let [separator (fn [prev child]
+                    (cond
+                      (or (= (:type child) :section) (= fmt :html)) "\n"
+                      ;; Org reads two lists separated by a single blank
+                      ;; line as one list: two blank lines end a list
+                      (and (= fmt :org) (= :list (:type prev) (:type child))) "\n\n\n"
+                      :else "\n\n"))
+        rendered  (keep (fn [child]
+                          (let [r (render-node child fmt)]
+                            (when-not (str/blank? r) [child r])))
+                        children)]
+    (str/join (map (fn [[prev _] [child r]] (if prev (str (separator prev child) r) r))
+                   (cons nil rendered)
+                   rendered))))
 
 (defn- meta-string
   "A document :meta value as one string. A repeated #+KEY: line gives a
@@ -780,6 +789,13 @@ li > p { margin-top: 0.5em; }
       ;; org: affiliated keywords are re-emitted by render-node
       (render-inline content fmt))))
 
+(defn- list-numbers
+  "The number of each item of an ordered list: one more than the previous
+   item, unless the item's [@N] cookie (organ's :counter) restarts the
+   count, as in Org."
+  [items]
+  (rest (reductions (fn [n item] (or (:counter item) (inc n))) 0 items)))
+
 (defn- render-list-node [node fmt]
   (case fmt
     :html (let [tag        (cond (:description node) "dl"
@@ -790,8 +806,8 @@ li > p { margin-top: 0.5em; }
                                 (str/join "\n"))]
             (str "<" tag ">\n" items-html "\n</" tag ">"))
     (let [sep (if (and (= fmt :md) (:description node)) "\n\n" "\n")]
-      (->> (:items node)
-           (map-indexed (fn [idx item] (render-list-item item idx (:ordered node) fmt)))
+      (->> (map (fn [item n] (render-list-item item n (:ordered node) fmt))
+                (:items node) (list-numbers (:items node)))
            (str/join sep)))))
 
 (defn- render-list-item-node [node fmt]
@@ -801,8 +817,9 @@ li > p { margin-top: 0.5em; }
       (if (:term node)
         (str "<dt>" (render-inline (:term node) :html) "</dt>\n<dd>"
              (render-inline (:definition node) :html) children-html "</dd>")
-        (str "<li>" (render-inline (:content node) :html) children-html "</li>")))
-    (render-list-item node 0 false fmt)))
+        (str "<li" (when-let [n (:counter node)] (str " value=\"" n "\"")) ">"
+             (render-inline (:content node) :html) children-html "</li>")))
+    (render-list-item node 1 false fmt)))
 
 (defn- render-table-node [node fmt]
   (let [rows       (:rows node)

@@ -87,9 +87,11 @@ children:
           - content: Nested item two
             type: list-item
           ordered: false
+          description: false
           type: list
         type: list-item
       ordered: false
+      description: false
       type: list
     type: section
     blank-lines-after-title: 1
@@ -108,6 +110,7 @@ children:
       - content: Third
         type: list-item
       ordered: true
+      description: false
       type: list
     type: section
     blank-lines-after-title: 1
@@ -129,9 +132,7 @@ children:
         definition: A simple terminal editor
         type: list-item
       ordered: false
-      description:
-      - type: text
-        value: Emacs
+      description: true
       type: list
     type: section
     blank-lines-after-title: 1

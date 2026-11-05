@@ -18,16 +18,16 @@ AST, applies the filters, then renders the AST in the requested format.
 
 ** Output formats (=-f=)
 
-| Format     | Output                                                                 |
-|------------+------------------------------------------------------------------------|
-| =json=     | The AST, text fields rendered as Markdown (default)                    |
-| =edn=      | Same AST as EDN                                                        |
-| =yaml=     | Same AST as YAML                                                       |
-| =md=       | Markdown document                                                      |
-| =html=     | Standalone HTML page (inline CSS, highlight.js when there is code)     |
-| =org=      | Org document, unwrapped and normalised, faithful to the source         |
-| =ics=      | iCalendar: =SCHEDULED= items as =VEVENT=, =DEADLINE= + TODO as =VTODO= |
-| =ics-anon= | iCalendar: =SCHEDULED= items only, anonymised as "Busy" blocks         |
+| Format   | Output                                                             |
+|----------+--------------------------------------------------------------------|
+| =json=     | The AST, text fields rendered as Markdown (default)                |
+| =edn=      | Same AST as EDN                                                    |
+| =yaml=     | Same AST as YAML                                                   |
+| =md=       | Markdown document                                                  |
+| =html=     | Standalone HTML page (inline CSS, highlight.js when there is code) |
+| =org=      | Org document, unwrapped and normalised, faithful to the source     |
+| =ics=      | iCalendar: =SCHEDULED= items as =VEVENT=, =DEADLINE= + TODO as =VTODO=     |
+| =ics-anon= | iCalendar: =SCHEDULED= items only, anonymised as "Busy" blocks       |
 
 : hop notes.org                   # AST as JSON
 : hop -f html notes.org           # HTML page
@@ -80,12 +80,11 @@ end of the page.
 ** Org export
 
 =-f org= aims at a faithful round trip: parse → export → parse yields
-the same document. The =#+= preamble (=#+TITLE:=, =#+OPTIONS:=,
-=#+TODO:=, =#+STARTUP:=, ...) is re-emitted in file order, drawers,
-LaTeX fragments and environments, planning lines, property drawers and
-tables nested in lists are preserved. Because the =#+OPTIONS= line
-carries the intent, the TOC and section numbers are /not/ written into
-the text.
+the same document. The =#+= preamble (=#+TITLE:=, =#+OPTIONS:=, =#+TODO:=,
+=#+STARTUP:=, ...) is re-emitted in file order, drawers, LaTeX fragments
+and environments, planning lines, property drawers and tables nested
+in lists are preserved. Because the =#+OPTIONS= line carries the intent,
+the TOC and section numbers are /not/ written into the text.
 
 : hop -f org notes.org            # Lines are unwrapped (one paragraph per line)
 : hop -f org -n notes.org         # Keep the original line breaks
@@ -96,26 +95,26 @@ every other format, as they carry no rendering of their own.
 
 ** ICS export (=ics= and =ics-anon=)
 
-| Option                  | Effect                                                                      |
-|-------------------------+-----------------------------------------------------------------------------|
-| =-w/--weeks N=          | Weeks ahead to scan (unbounded unless set)                                  |
+| Option                | Effect                                                                  |
+|-----------------------+-------------------------------------------------------------------------|
+| =-w/--weeks N=          | Weeks ahead to scan (unbounded unless set)                              |
 | =-R/--reference-date=   | Window start, =YYYY-MM-DD= (today when only =-w= is set; reproducible runs) |
-| =-d/--default-duration= | Minutes for events without an end time (none added unless set)              |
-| =-z/--time-zone=        | Zone anchoring the Org timestamps (system zone by default), validated       |
-| =-a/--all-day=          | Also emit all-day entries (excluded by default)                             |
+| =-d/--default-duration= | Minutes for events without an end time (none added unless set)          |
+| =-z/--time-zone=        | Zone anchoring the Org timestamps (system zone by default), validated   |
+| =-a/--all-day=          | Also emit all-day entries (excluded by default)                         |
 
-=SCHEDULED= timestamps become =VEVENT=; a =DEADLINE= under a heading
-with a TODO keyword becomes a =VTODO= (a due date reserves no time, so
-it never counts as busy). Repeaters
-(=+1w=) become =RRULE=; with =-w=, =ics-anon= expands them over the
-window and merges overlapping blocks instead. Inline timestamps and
-=CLOSED= are not exported. UIDs derive from the entry itself (title,
-timestamp, kind), so reordering the file does not churn them. Both
-formats emit UTC datetimes, anchored in the =-z= zone, no =VTIMEZONE=.
+=SCHEDULED= timestamps become =VEVENT=; a =DEADLINE= under a heading with a
+TODO keyword becomes a =VTODO= (a due date reserves no time, so it never
+counts as busy). Repeaters (=+1w=) become =RRULE=; with =-w=, =ics-anon=
+expands them over the window and merges overlapping blocks instead.
+Inline timestamps and =CLOSED= are not exported. UIDs derive from the
+entry itself (title, timestamp, kind), so reordering the file does not
+churn them. Both formats emit UTC datetimes, anchored in the =-z= zone,
+no =VTIMEZONE=.
 
-For =ics-anon=, an all-day =SCHEDULED= entry counts as busy only with
-=-a= and only when its heading bears no TODO keyword: a "Vacation"
-heading blocks its day, a task merely scheduled on a date does not.
+For =ics-anon=, an all-day =SCHEDULED= entry counts as busy only with =-a=
+and only when its heading bears no TODO keyword: a "Vacation" heading
+blocks its day, a task merely scheduled on a date does not.
 
 : hop -f ics -z Europe/Paris -d 45 notes.org               # 45-minute default events
 : hop -f ics-anon -R 2026-01-05 -w 12 -a notes.org         # 12-week free/busy from a fixed date
@@ -161,12 +160,11 @@ argument (=:html=, =:md=, =:org=) rather than existing in three copies.
 : ~$ bb test:generate     # regenerate the golden files after an intended output change
 
 =bb test= compares every format's output for =test/bzg/test.org= with
-=test/bzg/expected/= (ICS =DTSTAMP= lines are normalised), then runs
-the =clojure.test= suite in =test/bzg/hop_unit_test.clj=: pure helpers
-(RFC 5545 folding, slugs, =#+OPTIONS= parsing, TOC nesting, repeater
-windows, interval merging), CLI option typing and short-flag
-uniqueness, and the Org round trip. Review the golden diffs before
-committing them.
+=test/bzg/expected/= (ICS =DTSTAMP= lines are normalised), then runs the
+=clojure.test= suite in =test/bzg/hop_unit_test.clj=: pure helpers (RFC
+5545 folding, slugs, =#+OPTIONS= parsing, TOC nesting, repeater windows,
+interval merging), CLI option typing and short-flag uniqueness, and
+the Org round trip. Review the golden diffs before committing them.
 
 * Contributing
 

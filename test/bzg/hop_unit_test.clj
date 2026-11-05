@@ -167,6 +167,21 @@
       (is (not (str/includes? once "* 1 ")) "section numbers are not materialised"))
     (testing "body keyword lines are dropped from other formats"
       (is (not (str/includes? (hop/render-ast-as-markdown (organ/parse-org src)) "#+PROPERTY"))))))
+(deftest org-roundtrip-lists-test
+  (doseq [[label src] [["counter-set cookie" "1. a\n2. b\n5. [@5] e\n6. f\n"]
+                       ["two lists split by two blank lines" "- a\n- b\n\n\n- c\n"]
+                       ["description list then plain list" "- a :: def\n\n\n- plain\n"]]]
+    (testing label
+      (let [once (hop/render-ast-as-org (organ/parse-org src))]
+        (is (= (structure (organ/parse-org src)) (structure (organ/parse-org once))))
+        (is (= once (hop/render-ast-as-org (organ/parse-org once)))))))
+  (testing "the cookie restarts the numbering"
+    (is (str/includes? (hop/render-ast-as-org (organ/parse-org "1. a\n2. [@5] b\n3. c"))
+                       "1. a\n5. [@5] b\n6. c")))
+  (testing "html gives a restarted item its value"
+    (is (str/includes? (hop/render-ast-as-html (organ/parse-org "1. a\n2. [@5] b"))
+                       "<li value=\"5\">b</li>"))))
+
 (deftest cli-options-test
   (testing "short flags are unique (tools.cli does not check this)"
     (let [shorts (keep first cli-options)]
