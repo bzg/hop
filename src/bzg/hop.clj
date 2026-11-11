@@ -241,7 +241,8 @@
                 (str "<sup><a href=\"#\" title=\"" text
                      "\" class=\"footnote-inline\">" display "</a></sup>"))
         :md   (str "[^" (or label "") "]")
-        (str "[fn:" (or label "") ":" (or (inline-text children) "") "]")))
+        ;; org: keep the definition's markup (emphasis, links)
+        (str "[fn:" (or label "") ":" (render-inline children fmt) "]")))
     :timestamp (:raw node)
     :latex-fragment
     (let [[open close] (latex-fragment-delimiters (:kind node))

@@ -182,6 +182,14 @@
     (is (str/includes? (hop/render-ast-as-html (organ/parse-org "1. a\n2. [@5] b"))
                        "<li value=\"5\">b</li>"))))
 
+(deftest org-roundtrip-inline-footnote-test
+  (testing "an inline footnote keeps its markup and its links"
+    (let [src  "Text[fn::see [[https://x.org][the *site*]] ok] and [fn:n:a /note/].\n"
+          once (hop/render-ast-as-org (organ/parse-org src))]
+      (is (str/includes? once "[fn::see [[https://x.org][the *site*]] ok]"))
+      (is (str/includes? once "[fn:n:a /note/]"))
+      (is (= (structure (organ/parse-org src)) (structure (organ/parse-org once)))))))
+
 (deftest cli-options-test
   (testing "short flags are unique (tools.cli does not check this)"
     (let [shorts (keep first cli-options)]
