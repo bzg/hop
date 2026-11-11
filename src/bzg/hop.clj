@@ -17,7 +17,11 @@
 ;; Re-bind organ utilities for local use
 (def ^:private remove-empty-vals organ/remove-empty-vals)
 (def ^:private non-blank? organ/non-blank?)
-(def ^:private escape-block-content organ/escape-block-content)
+(defn- escape-block-content
+  "organ/escape-block-content, for a block that may be empty (organ then
+   leaves :content out of the node)."
+  [content]
+  (organ/escape-block-content (or content "")))
 (def ^:private parse-inline organ/parse-inline)
 (def ^:private inline-text organ/inline-text)
 

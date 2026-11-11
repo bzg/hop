@@ -200,6 +200,15 @@
       (is (= (structure (organ/parse-org src)) (structure (organ/parse-org once))))
       (is (= once (hop/render-ast-as-org (organ/parse-org once)))))))
 
+(deftest org-roundtrip-empty-blocks-test
+  (testing "empty blocks are exported, not a crash"
+    (let [src  "#+BEGIN_SRC sh\n#+END_SRC\n\n#+BEGIN_EXAMPLE\n#+END_EXAMPLE\n\n#+BEGIN_EXPORT html\n#+END_EXPORT\n"
+          once (hop/render-ast-as-org (organ/parse-org src))]
+      (is (str/includes? once "#+BEGIN_SRC sh\n"))
+      (is (str/includes? once "#+BEGIN_EXAMPLE\n"))
+      (is (str/includes? once "#+BEGIN_EXPORT html\n"))
+      (is (= once (hop/render-ast-as-org (organ/parse-org once)))))))
+
 (deftest cli-options-test
   (testing "short flags are unique (tools.cli does not check this)"
     (let [shorts (keep first cli-options)]
