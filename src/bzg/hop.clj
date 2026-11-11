@@ -930,13 +930,15 @@ li > p { margin-top: 0.5em; }
     ""))
 
 (defn- render-affiliated-org
-  "Re-emit a node's affiliated keywords (#+caption:, #+name:, #+attr_*:)
-   as the lines that precede it in Org."
+  "Re-emit a node's affiliated keywords (#+caption:, #+name:, #+header:,
+   #+results:, #+attr_*:) as the lines that precede it in Org."
   [affiliated]
   (when affiliated
     (->> (concat
           (when-let [caption (:caption affiliated)] [(str "#+caption: " caption)])
           (when-let [aff-name (:name affiliated)] [(str "#+name: " aff-name)])
+          (for [k [:header :results] :let [v (get affiliated k)] :when v]
+            (str "#+" (name k) ": " v))
           (for [[attr-type attrs] (:attr affiliated)
                 :when             (seq attrs)]
             (str "#+attr_" (name attr-type) ": "

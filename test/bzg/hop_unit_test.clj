@@ -190,6 +190,16 @@
       (is (str/includes? once "[fn:n:a /note/]"))
       (is (= (structure (organ/parse-org src)) (structure (organ/parse-org once)))))))
 
+(deftest org-roundtrip-affiliated-test
+  (testing "#+header: and #+results: lines are re-emitted"
+    (let [src  (str "#+NAME: blk\n#+HEADER: :var x=1\n#+BEGIN_SRC sh\necho $x\n#+END_SRC\n\n"
+                    "#+RESULTS[abc123]: blk\n| 1 |\n")
+          once (hop/render-ast-as-org (organ/parse-org src))]
+      (is (str/includes? once "#+name: blk\n#+header: :var x=1\n#+BEGIN_SRC sh"))
+      (is (str/includes? once "#+results: blk\n| 1"))
+      (is (= (structure (organ/parse-org src)) (structure (organ/parse-org once))))
+      (is (= once (hop/render-ast-as-org (organ/parse-org once)))))))
+
 (deftest cli-options-test
   (testing "short flags are unique (tools.cli does not check this)"
     (let [shorts (keep first cli-options)]
