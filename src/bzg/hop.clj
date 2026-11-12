@@ -189,7 +189,7 @@
      :file        (if (= fmt :org) url (str/replace target #"\.org$" ".html"))
      (:id
       :custom-id) (str "#" target)
-     :heading     (str "#" (heading-to-slug target))
+     :heading     (str "#" (heading-to-slug (parse-inline target)))
      :mailto      (str "mailto:" target)
      url)))
 
@@ -247,7 +247,7 @@
         :md   (str "[^" (or label "") "]")
         ;; org: keep the definition's markup (emphasis, links)
         (str "[fn:" (or label "") ":" (render-inline children fmt) "]")))
-    :timestamp (:raw node)
+    (:timestamp :macro) (cond-> (:raw node) (= fmt :html) escape-html)
     :latex-fragment
     (let [[open close] (latex-fragment-delimiters (:kind node))
           text         (str open (:value node) close)]
@@ -362,7 +362,9 @@
 
       ;; Org format
       :else
-      (let [href    (resolve-link-href node :org)
+      (let [href    (-> (resolve-link-href node :org) ; as org-link-escape
+                        (str/replace #"(\\*)(?=[\[\]]|\z)" "$1$1")
+                        (str/replace #"[\[\]]" "\\\\$0"))
             display (when has-desc (render-inline children :org))]
         (if display
           (str "[[" href "][" display "]]")

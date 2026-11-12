@@ -112,7 +112,10 @@
     (is (= "file:notes.org" (resolve-link-href node :org)))
     (binding [hop/*base-url* "https://base.io/"]
       (is (= "https://base.io/notes.html" (resolve-link-href node :md)))
-      (is (= "#x" (resolve-link-href {:link-type :custom-id :target "x"} :md)) "anchors are left alone"))))
+      (is (= "#x" (resolve-link-href {:link-type :custom-id :target "x"} :md)) "anchors are left alone")))
+  (testing "a link to a heading that holds a link points to that heading's slug"
+    (is (= "#with-an-example"
+           (resolve-link-href (first (organ/parse-inline "[[*with an \\[\\[file:a.org\\]\\[example\\]\\]][x]]")) :html)))))
 
 (deftest inline-markup-test
   (let [nodes (organ/parse-inline "*b* /i/ _u_ +s+ ~c~ =v= $x^2$ \\(a\\)")]
@@ -120,6 +123,15 @@
     (is (= "**b** *i* _u_ ~~s~~ `c` `v` $x^2$ \\(a\\)" (render-inline nodes :md)))
     (is (= "<strong>b</strong> <em>i</em> <u>u</u> <del>s</del> <code>c</code> <code>v</code> $x^2$ \\(a\\)"
            (render-inline nodes :html)))))
+
+(deftest organ-3-6-test
+  (testing "macro calls and timestamps are kept as written, escaped in html"
+    (let [nodes (organ/parse-inline "{{{rb(a, <c>)}}} <2025-01-15 Wed>")]
+      (is (= "{{{rb(a, <c>)}}} <2025-01-15 Wed>" (render-inline nodes :org)))
+      (is (= "{{{rb(a, &lt;c&gt;)}}} &lt;2025-01-15 Wed&gt;" (render-inline nodes :html)))))
+  (testing "a link path is escaped again in org output, as org-link-escape does"
+    (doseq [src ["[[file:x\\[1\\].org][d]]" "[[a\\\\\\]b\\\\]]" "[[C:\\dir\\\\][d]]"]]
+      (is (= src (render-inline (organ/parse-inline src) :org))))))
 
 (defn- structure
   "AST stripped of line numbers and blank-line bookkeeping, which an
