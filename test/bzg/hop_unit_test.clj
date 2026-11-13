@@ -210,7 +210,10 @@
       (is (str/includes? once "#+name: blk\n#+header: :var x=1\n#+BEGIN_SRC sh"))
       (is (str/includes? once "#+results: blk\n| 1"))
       (is (= (structure (organ/parse-org src)) (structure (organ/parse-org once))))
-      (is (= once (hop/render-ast-as-org (organ/parse-org once)))))))
+      (is (= once (hop/render-ast-as-org (organ/parse-org once))))))
+  (let [ast (organ/parse-org "#+caption: A *bold* move\n[[https://x.org/i.png]]\n")]
+    (is (str/includes? (hop/render-ast-as-org ast) "#+caption: A *bold* move\n"))
+    (is (str/includes? (hop/render-ast-as-html ast) "<figcaption>A <strong>bold</strong> move</figcaption>"))))
 
 (deftest org-roundtrip-empty-blocks-test
   (testing "empty blocks are exported, not a crash"

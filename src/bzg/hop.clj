@@ -145,6 +145,9 @@
                    (str " " (name k) "=\"" (escape-html (str v)) "\""))))
          (str/join))))
 
+;; Inline Node Rendering -- forward declarations
+(declare render-inline render-link-node)
+
 (defn- render-image-html
   "Render an <img> tag merging #+attr_html attributes; default-alt is used
    when attrs provide no :alt. A :caption wraps the tag in a <figure>."
@@ -156,7 +159,7 @@
         caption    (:caption affiliated)]
     (if caption
       (str "<figure>" img-tag "<figcaption>"
-           (escape-html caption) "</figcaption></figure>")
+           (render-inline caption :html) "</figcaption></figure>")
       img-tag)))
 
 (defn- heading-to-slug
@@ -192,9 +195,6 @@
      :heading     (str "#" (heading-to-slug (parse-inline target)))
      :mailto      (str "mailto:" target)
      url)))
-
-;; Inline Node Rendering -- forward declarations
-(declare render-inline render-link-node)
 
 (def ^:private inline-markup
   "[open close] delimiters of emphasis and literal inline nodes, per format."
@@ -941,7 +941,7 @@ li > p { margin-top: 0.5em; }
   [affiliated]
   (when affiliated
     (->> (concat
-          (when-let [caption (:caption affiliated)] [(str "#+caption: " caption)])
+          (when-let [caption (:caption affiliated)] [(str "#+caption: " (render-inline caption :org))])
           (when-let [aff-name (:name affiliated)] [(str "#+name: " aff-name)])
           (for [k [:header :results] :let [v (get affiliated k)] :when v]
             (str "#+" (name k) ": " v))
